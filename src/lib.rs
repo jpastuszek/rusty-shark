@@ -88,6 +88,9 @@ pub enum Val {
     /// A UTF-8–encoded string.
     String(String),
 
+    /// A UTF-8-encoded static string.
+    Symbol(&'static str),
+
     /// A network address, which can have its own special encoding.
     Address { bytes: Vec<u8>, encoded: String },
 
@@ -128,7 +131,8 @@ impl fmt::Display for Val {
         match self {
             &Val::Signed(ref i) => write![f, "{}", i],
             &Val::Unsigned(ref i) => write![f, "{}", i],
-            &Val::String(ref s) => write![f, "{}", s],
+            &Val::String(ref s) => write![f, "\"{}\"", s],
+            &Val::Symbol(ref s) => write![f, "{}", s],
             &Val::Address { ref encoded, .. } => write![f, "{}", encoded],
 
             &Val::Object(ref values) => {

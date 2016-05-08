@@ -56,7 +56,7 @@ pub fn dissect(data : &[u8]) -> Result {
             let (ty, subname):(Result, &str) = match protocol {
                 Ok((name, val_name)) =>
                     (
-                        Ok(Val::String(name.to_string())),
+                        Ok(Val::Symbol(name)),
                         val_name
                     ),
 
