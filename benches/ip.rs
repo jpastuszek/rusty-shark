@@ -4,11 +4,17 @@ extern crate rshark;
 extern crate test;
 
 use test::Bencher;
-use rshark::ip::dissect;
 
 #[bench]
 fn dissect_ip_bench(b: &mut Bencher) {
     let data = [69, 0, 0, 60, 0, 0, 64, 0, 46, 6, 161, 36, 46, 137, 186, 243, 192, 168, 1, 115, 1, 187, 252, 235, 74, 97, 130, 175, 50, 220, 74, 238, 160, 18, 56, 144, 237, 13, 0, 0, 2, 4, 5, 180, 4, 2, 8, 10, 15, 68, 221, 156, 29, 26, 35, 62, 1, 3, 3, 6];
 
-    b.iter(|| dissect(&data).unwrap());
+    b.iter(|| rshark::ip::dissect(&data).unwrap());
+}
+
+#[bench]
+fn dissect_ethernet_ip_bench(b: &mut Bencher) {
+    let data = [132, 56, 53, 69, 73, 136, 156, 32, 123, 233, 26, 2, 8, 0, 69, 0, 0, 64, 127, 67, 64, 0, 64, 6, 55, 51, 192, 168, 1, 126, 192, 168, 1, 115, 27, 88, 199, 207, 43, 133, 190, 30, 242, 187, 131, 235, 176, 18, 255, 255, 90, 208, 0, 0, 2, 4, 5, 180, 1, 3, 3, 4, 1, 1, 8, 10, 115, 114, 66, 46, 29, 143, 65, 57, 4, 2, 0, 0];
+
+    b.iter(|| rshark::ethernet::dissect(&data).unwrap());
 }
