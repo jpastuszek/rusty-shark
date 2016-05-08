@@ -63,7 +63,6 @@
 extern crate byteorder;
 
 use byteorder::ReadBytesExt;
-use std::fmt::Display;
 use std::fmt;
 use std::io;
 
@@ -196,7 +195,7 @@ pub type Result<T=Val> = ::std::result::Result<T,Error>;
 
 
 /// A named value-or-error.
-pub type NamedValue = (String,Result<Val>);
+pub type NamedValue = (&'static str, Result<Val>);
 
 /// Type of dissection functions.
 pub type Dissector = fn(&[u8]) -> Result<Val>;
@@ -272,7 +271,7 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
 /// Dissector of last resort: store raw bytes without interpretation.
 pub fn raw(data: &[u8]) -> Result {
     Ok(Val::Object(vec![
-        ("raw data".to_string(), Ok(Val::Bytes(data.to_vec())))
+        ("raw data", Ok(Val::Bytes(data.to_vec())))
     ]))
 }
 

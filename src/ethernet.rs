@@ -29,8 +29,8 @@ pub fn dissect(data : &[u8]) -> Result {
     }
 
     let mut values:Vec<NamedValue> = vec![];
-    values.push(("Destination".to_string(), Ok(Val::Bytes(data[0..6].to_vec()))));
-    values.push(("Source".to_string(), Ok(Val::Bytes(data[6..12].to_vec()))));
+    values.push(("Destination", Ok(Val::Bytes(data[0..6].to_vec()))));
+    values.push(("Source", Ok(Val::Bytes(data[6..12].to_vec()))));
 
     // The type/length field might be either a type or a length.
     let tlen = unsigned(&data[12..14], Endianness::BigEndian);
@@ -38,36 +38,36 @@ pub fn dissect(data : &[u8]) -> Result {
 
     match tlen {
         Ok(i) if i <= 1500 => {
-            values.push(("Length".to_string(), Ok(Val::Unsigned(i))));
+            values.push(("Length", Ok(Val::Unsigned(i))));
         },
 
         Ok(i) => {
-            let (protocol, dissector): (Result<&str>, Dissector) = match i {
-                0x800 => (Ok("IP"), ip::dissect),
-                0x806 => (Ok("ARP"), raw),
-                0x8138 => (Ok("IPX"), raw),
-                0x86dd => (Ok("IPv6"), raw),
+            let (protocol, dissector): (Result<(&str, &str)>, Dissector) = match i {
+                0x800 => (Ok(("IP", "IP data")), ip::dissect),
+                0x806 => (Ok(("ARP", "ARB data")), raw),
+                0x8138 => (Ok(("IPX", "IPX data")), raw),
+                0x86dd => (Ok(("IPv6", "IPVv6 data")), raw),
                 _ => (
                     Err(Error::InvalidData(format!["unknown protocol: {:x}", i])),
                     raw
                 ),
             };
 
-            let (ty, subname):(Result,String) = match protocol {
-                Ok(name) =>
+            let (ty, subname):(Result, &str) = match protocol {
+                Ok((name, val_name)) =>
                     (
                         Ok(Val::String(name.to_string())),
-                        format!["{} data", name]
+                        val_name
                     ),
 
-                Err(e) => (Err(e), "Unknown protocol data".to_string()),
+                Err(e) => (Err(e), "Unknown protocol data"),
             };
 
-            values.push(("Type".to_string(), ty));
+            values.push(("Type", ty));
             values.push((subname, dissector(remainder)));
         },
         Err(e) => {
-            values.push(("Type/length".to_string(), Err(e)));
+            values.push(("Type/length", Err(e)));
         },
     };
 
