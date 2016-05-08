@@ -73,3 +73,37 @@ pub fn dissect(data : &[u8]) -> Result {
 
     Ok(Val::Object(values))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use Val;
+    use Error;
+
+    #[test]
+    fn dissect_ethernet() {
+        let data = [132, 56, 53, 69, 73, 136, 156, 32, 123, 233, 26, 2, 8, 0];
+
+        let val = dissect(&data).unwrap();
+
+        /*
+           Destination: 6 B [ 84 38 35 45 49 88 ]
+           Source: 6 B [ 9c 20 7b e9 1a 02 ]
+           Type: IP
+        */
+
+        let mut values = vec![];
+
+        values.push(("Destination", Ok(Val::Bytes(vec![0x84, 0x38, 0x35, 0x45, 0x49, 0x88]))));
+        values.push(("Source", Ok(Val::Bytes(vec![0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02]))));
+        values.push(("Type", Ok(Val::Symbol("IP"))));
+        values.push(("IP data", Err(Error::Underflow { expected: 20, have: 0, message: "An IP packet must be at least 20 B".to_string() })));
+
+        let expected_val = Val::Object(values);
+
+        println!("{}", &val.pretty_print(0));
+        println!("{}", &expected_val.pretty_print(0));
+
+        assert_eq!(val, expected_val);
+    }
+}

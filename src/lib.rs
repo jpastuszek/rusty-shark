@@ -94,7 +94,7 @@ pub enum Val {
     /// A network address, which can have its own special encoding.
     Address { bytes: Vec<u8>, encoded: String },
 
-    /// A sub-object is an ordered set of (name,value) tuples.
+    /// A sub-object is an ordered set of (name, value) tuples.
     Object(Vec<NamedValue>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.

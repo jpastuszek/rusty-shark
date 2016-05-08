@@ -92,8 +92,8 @@ pub fn dissect(data : &[u8]) -> Result {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ::Val;
-    use ::raw;
+    use Val;
+    use raw;
 
     #[test]
     fn dissect_ip() {
