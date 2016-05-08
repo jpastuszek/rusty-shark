@@ -124,6 +124,113 @@ impl Val {
             _ => format!["{}", self]
         }
     }
+
+    /// Returns true if the `Val` is a Signed. Returns false otherwise.
+    pub fn is_signed<'a>(&'a self) -> bool {
+        self.as_signed().is_some()
+    }
+
+    /// If the `Val` is a Signed, returns the associated i64.
+    /// Returns None otherwise.
+    pub fn as_signed<'a>(&'a self) -> Option<&'a i64> {
+        match self {
+            &Val::Signed(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is an Unsigned. Returns false otherwise.
+    pub fn is_unsigned<'a>(&'a self) -> bool {
+        self.as_unsigned().is_some()
+    }
+
+    /// If the `Val` is an Unsigned, returns the associated u64.
+    /// Returns None otherwise.
+    pub fn as_unsigned<'a>(&'a self) -> Option<&'a u64> {
+        match self {
+            &Val::Unsigned(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a String. Returns false otherwise.
+    pub fn is_string<'a>(&'a self) -> bool {
+        self.as_string().is_some()
+    }
+
+    /// If the `Val` is a String, returns the associated String.
+    /// Returns None otherwise.
+    pub fn as_string<'a>(&'a self) -> Option<&'a String> {
+        match self {
+            &Val::String(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a Symbol. Returns false otherwise.
+    pub fn is_symbol<'a>(&'a self) -> bool {
+        self.as_symbol().is_some()
+    }
+
+    /// If the `Val` is a Symbol, returns the associated &str.
+    /// Returns None otherwise.
+    pub fn as_symbol<'a>(&'a self) -> Option<&'a str> {
+        match self {
+            &Val::Symbol(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a Address. Returns false otherwise.
+    pub fn is_address<'a>(&'a self) -> bool {
+        self.as_address_bytes().is_some()
+    }
+
+    /// If the `Val` is a Address, returns the associated bytes field as Vec<u8>.
+    /// Returns None otherwise.
+    pub fn as_address_bytes<'a>(&'a self) -> Option<&'a Vec<u8>> {
+        match self {
+            &Val::Address{ref bytes, ..} => Some(bytes),
+            _ => None
+        }
+    }
+
+    /// If the `Val` is a Address, returns the associated encoded field as String.
+    /// Returns None otherwise.
+    pub fn as_address_encoded<'a>(&'a self) -> Option<&'a String> {
+        match self {
+            &Val::Address{ref encoded, ..} => Some(encoded),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a Object. Returns false otherwise.
+    pub fn is_object<'a>(&'a self) -> bool {
+        self.as_object().is_some()
+    }
+
+    /// If the `Val` is a Object, returns the associated Vec<NamedValue>.
+    /// Returns None otherwise.
+    pub fn as_object<'a>(&'a self) -> Option<&'a Vec<NamedValue>> {
+        match self {
+            &Val::Object(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a Bytes. Returns false otherwise.
+    pub fn is_bytes<'a>(&'a self) -> bool {
+        self.as_bytes().is_some()
+    }
+
+    /// If the `Val` is a Bytes, returns the associated Vec<u8>.
+    /// Returns None otherwise.
+    pub fn as_bytes<'a>(&'a self) -> Option<&'a Vec<u8>> {
+        match self {
+            &Val::Bytes(ref val) => Some(val),
+            _ => None
+        }
+    }
 }
 
 impl fmt::Display for Val {
