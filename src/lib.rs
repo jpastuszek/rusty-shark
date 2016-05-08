@@ -78,6 +78,7 @@ use std::io;
 ///  * supporting error metadata (e.g., "parsed ok but checksum doesn't match")
 ///  * supporting asynchronous sub-object parsing (some sort of promises?)
 ///
+#[derive(Debug, PartialEq)]
 pub enum Val {
     /// A signed integer, in machine-native representation.
     Signed(i64),
@@ -172,7 +173,7 @@ impl fmt::Display for Val {
 
 
 /// An error related to packet dissection (underflow, bad value, etc.).
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Underflow { expected: usize, have: usize, message: String, },
     InvalidData(String),

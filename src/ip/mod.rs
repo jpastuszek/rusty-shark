@@ -88,3 +88,51 @@ pub fn dissect(data : &[u8]) -> Result {
 
     Ok(Val::Object(values))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ::Val;
+    use ::raw;
+
+    #[test]
+    fn dissect_ip() {
+        let data = [69, 0, 0, 60, 0, 0, 64, 0, 46, 6, 161, 36, 46, 137, 186, 243, 192, 168, 1, 115, 1, 187, 252, 235, 74, 97, 130, 175, 50, 220, 74, 238, 160, 18, 56, 144, 237, 13, 0, 0, 2, 4, 5, 180, 4, 2, 8, 10, 15, 68, 221, 156, 29, 26, 35, 62, 1, 3, 3, 6];
+
+        let val = dissect(&data).unwrap();
+
+        /*
+          Version: 4
+          IHL: 5
+          DSCP: 0
+          ECN: 0
+          Length: 60
+          Identification: 46
+          Protocol: 6
+          Checksum: 2 B [ a1 24 ]
+          Source: 46.137.186.243
+          Destination: 192.168.1.115
+        */
+
+        let mut values = vec![];
+
+        values.push(("Version".to_string(), Ok(Val::Unsigned(4))));
+        values.push(("IHL".to_string(), Ok(Val::Unsigned(5))));
+        values.push(("DSCP".to_string(), Ok(Val::Unsigned(0))));
+        values.push(("ECN".to_string(), Ok(Val::Unsigned(0))));
+        values.push(("Length".to_string(), Ok(Val::Unsigned(60))));
+        values.push(("Identification".to_string(), Ok(Val::Unsigned(46))));
+        values.push(("Protocol".to_string(), Ok(Val::Unsigned(6))));
+        values.push(("Checksum".to_string(), Ok(Val::Bytes(vec![0xa1u8, 0x24]))));
+        values.push(("Source".to_string(), Ok(Val::Address{bytes: vec![46, 137, 186, 243], encoded: "46.137.186.243".to_string()})));
+        values.push(("Destination".to_string(), Ok(Val::Address{bytes: vec![192, 168, 1, 115], encoded: "192.168.1.115".to_string()})));
+        values.push(("Protocol Data".to_string(), raw(&data[20..])));
+
+        let expected_val = Val::Object(values);
+
+        println!("{}", &val.pretty_print(0));
+        println!("{}", &expected_val.pretty_print(0));
+
+        assert_eq!(val, expected_val);
+    }
+}
