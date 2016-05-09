@@ -9,18 +9,15 @@
 
 //! Dissection of Ethernet (IEEE 802.3) frames.
 
-use {
-    Dissector,
-    Endianness,
-    Error,
-    NamedValue,
-    Result,
-    Val,
-    ip,
-    raw,
-    unsigned,
-};
-
+use Dissector;
+use Endianness;
+use Error;
+use Result;
+use Val;
+use NamedValues;
+use ip;
+use raw;
+use unsigned;
 
 pub fn dissect(data : &[u8]) -> Result {
     if data.len() < 14 {
@@ -28,9 +25,9 @@ pub fn dissect(data : &[u8]) -> Result {
             message: "An Ethernet frame must be at least 14 B".to_string() })
     }
 
-    let mut values:Vec<NamedValue> = vec![];
-    values.push(("Destination", Ok(Val::Bytes(data[0..6].to_vec()))));
-    values.push(("Source", Ok(Val::Bytes(data[6..12].to_vec()))));
+    let mut values = NamedValues::new();
+    values.insert("Destination", Ok(Val::Bytes(data[0..6].to_vec())));
+    values.insert("Source", Ok(Val::Bytes(data[6..12].to_vec())));
 
     // The type/length field might be either a type or a length.
     let tlen = unsigned(&data[12..14], Endianness::BigEndian);
@@ -38,7 +35,7 @@ pub fn dissect(data : &[u8]) -> Result {
 
     match tlen {
         Ok(i) if i <= 1500 => {
-            values.push(("Length", Ok(Val::Unsigned(i))));
+            values.insert("Length", Ok(Val::Unsigned(i)));
         },
 
         Ok(i) => {
@@ -63,11 +60,11 @@ pub fn dissect(data : &[u8]) -> Result {
                 Err(e) => (Err(e), "Unknown protocol data"),
             };
 
-            values.push(("Type", ty));
-            values.push((subname, dissector(remainder)));
+            values.insert("Type", ty);
+            values.insert(subname, dissector(remainder));
         },
         Err(e) => {
-            values.push(("Type/length", Err(e)));
+            values.insert("Type/length", Err(e));
         },
     };
 
@@ -78,6 +75,7 @@ pub fn dissect(data : &[u8]) -> Result {
 mod test {
     use super::*;
     use Val;
+    use NamedValues;
     use Error;
 
     #[test]
@@ -92,12 +90,12 @@ mod test {
            Type: IP
         */
 
-        let mut values = vec![];
+        let mut values = NamedValues::new();
 
-        values.push(("Destination", Ok(Val::Bytes(vec![0x84, 0x38, 0x35, 0x45, 0x49, 0x88]))));
-        values.push(("Source", Ok(Val::Bytes(vec![0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02]))));
-        values.push(("Type", Ok(Val::Symbol("IP"))));
-        values.push(("IP data", Err(Error::Underflow { expected: 20, have: 0, message: "An IP packet must be at least 20 B".to_string() })));
+        values.insert("Destination", Ok(Val::Bytes(vec![0x84, 0x38, 0x35, 0x45, 0x49, 0x88])));
+        values.insert("Source", Ok(Val::Bytes(vec![0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02])));
+        values.insert("Type", Ok(Val::Symbol("IP")));
+        values.insert("IP data", Err(Error::Underflow { expected: 20, have: 0, message: "An IP packet must be at least 20 B".to_string() }));
 
         let expected_val = Val::Object(values);
 
@@ -105,5 +103,10 @@ mod test {
         println!("{}", &expected_val.pretty_print(0));
 
         assert_eq!(val, expected_val);
+
+        //let object = val.as_object().unwrap();
+
+        //assert_eq!(object[0].0, "Destination");
+        //assert_eq!(object[0].1.as_ref().unwrap().as_bytes().unwrap(), &vec![0x84, 0x38, 0x35, 0x45, 0x49, 0x88]);
     }
 }

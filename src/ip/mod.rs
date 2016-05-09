@@ -15,16 +15,13 @@
 //!
 //! See [RFC 791](https://tools.ietf.org/html/rfc791).
 
-use {
-    Endianness,
-    Error,
-    NamedValue,
-    Result,
-    Val,
-    raw,
-    unsigned,
-};
-
+use Endianness;
+use Error;
+use Result;
+use Val;
+use NamedValues;
+use raw;
+use unsigned;
 
 pub fn dissect(data : &[u8]) -> Result {
     if data.len() < 20 {
@@ -32,50 +29,50 @@ pub fn dissect(data : &[u8]) -> Result {
             message: "An IP packet must be at least 20 B".to_string() })
     }
 
-    let mut values:Vec<NamedValue> = vec![];
+    let mut values = NamedValues::new();
 
     // IP version (should be "4")
     let version = data[0] >> 4;
-    values.push(("Version", Ok(Val::Unsigned(version as u64))));
+    values.insert("Version", Ok(Val::Unsigned(version as u64)));
 
     // Internet Header Length (IHL): number of 32b words in header
     let words = data[0] & 0x0f;
-    values.push(("IHL", Ok(Val::Unsigned(words as u64))));
+    values.insert("IHL", Ok(Val::Unsigned(words as u64)));
 
     // Differentiated Services Code Point (DSCP): RFC 2474
     let dscp = data[1] >> 2;
-    values.push(("DSCP", Ok(Val::Unsigned(dscp as u64))));
+    values.insert("DSCP", Ok(Val::Unsigned(dscp as u64)));
 
     // Explicit Congestion Notification (ECN): RFC 3168
     let ecn = data[1] & 0x03;
-    values.push(("ECN", Ok(Val::Unsigned(ecn as u64))));
+    values.insert("ECN", Ok(Val::Unsigned(ecn as u64)));
 
     // Total length (including header)
     let length = unsigned(&data[2..4], Endianness::BigEndian);
-    values.push(("Length", length.map(|v| Val::Unsigned(v))));
+    values.insert("Length", length.map(|v| Val::Unsigned(v)));
 
     // Identification (of datagraph fragments): RFC 6864
-    values.push(("Identification", Ok(Val::Unsigned(data[8] as u64))));
+    values.insert("Identification", Ok(Val::Unsigned(data[8] as u64)));
 
     // Protocol number (assigned by IANA)
     let protocol = data[9];
-    values.push(("Protocol", Ok(Val::Unsigned(protocol as u64))));
+    values.insert("Protocol", Ok(Val::Unsigned(protocol as u64)));
 
     // Header checksum
-    values.push(("Checksum", Ok(Val::Bytes(data[10..12].to_vec()))));
+    values.insert("Checksum", Ok(Val::Bytes(data[10..12].to_vec())));
 
     // Source and destination addresses
     let source = &data[12..16];
-    values.push(("Source", Ok(Val::Address {
+    values.insert("Source", Ok(Val::Address {
         bytes: source.to_vec(),
         encoded: source.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
-    })));
+    }));
 
     let dest = &data[16..20];
-    values.push(("Destination", Ok(Val::Address {
+    values.insert("Destination", Ok(Val::Address {
         bytes: dest.to_vec(),
         encoded: dest.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
-    })));
+    }));
 
     // Parse the remainder according to the specified protocol.
     let remainder = &data[20..];
@@ -84,7 +81,7 @@ pub fn dissect(data : &[u8]) -> Result {
         _ => raw,
     };
 
-    values.push(("Protocol Data", dissect_pdu(remainder)));
+    values.insert("Protocol Data", dissect_pdu(remainder));
 
     Ok(Val::Object(values))
 }
@@ -93,6 +90,7 @@ pub fn dissect(data : &[u8]) -> Result {
 mod test {
     use super::*;
     use Val;
+    use NamedValues;
     use raw;
 
     #[test]
@@ -114,19 +112,19 @@ mod test {
           Destination: 192.168.1.115
         */
 
-        let mut values = vec![];
+        let mut values = NamedValues::new();
 
-        values.push(("Version", Ok(Val::Unsigned(4))));
-        values.push(("IHL", Ok(Val::Unsigned(5))));
-        values.push(("DSCP", Ok(Val::Unsigned(0))));
-        values.push(("ECN", Ok(Val::Unsigned(0))));
-        values.push(("Length", Ok(Val::Unsigned(60))));
-        values.push(("Identification", Ok(Val::Unsigned(46))));
-        values.push(("Protocol", Ok(Val::Unsigned(6))));
-        values.push(("Checksum", Ok(Val::Bytes(vec![0xa1u8, 0x24]))));
-        values.push(("Source", Ok(Val::Address{bytes: vec![46, 137, 186, 243], encoded: "46.137.186.243".to_string()})));
-        values.push(("Destination", Ok(Val::Address{bytes: vec![192, 168, 1, 115], encoded: "192.168.1.115".to_string()})));
-        values.push(("Protocol Data", raw(&data[20..])));
+        values.insert("Version", Ok(Val::Unsigned(4)));
+        values.insert("IHL", Ok(Val::Unsigned(5)));
+        values.insert("DSCP", Ok(Val::Unsigned(0)));
+        values.insert("ECN", Ok(Val::Unsigned(0)));
+        values.insert("Length", Ok(Val::Unsigned(60)));
+        values.insert("Identification", Ok(Val::Unsigned(46)));
+        values.insert("Protocol", Ok(Val::Unsigned(6)));
+        values.insert("Checksum", Ok(Val::Bytes(vec![0xa1u8, 0x24])));
+        values.insert("Source", Ok(Val::Address{bytes: vec![46, 137, 186, 243], encoded: "46.137.186.243".to_string()}));
+        values.insert("Destination", Ok(Val::Address{bytes: vec![192, 168, 1, 115], encoded: "192.168.1.115".to_string()}));
+        values.insert("Protocol Data", raw(&data[20..]));
 
         let expected_val = Val::Object(values);
 

@@ -65,7 +65,7 @@ extern crate byteorder;
 use byteorder::ReadBytesExt;
 use std::fmt;
 use std::io;
-
+use std::collections::BTreeMap;
 
 /// A value parsed from a packet.
 ///
@@ -95,7 +95,7 @@ pub enum Val {
     Address { bytes: Vec<u8>, encoded: String },
 
     /// A sub-object is an ordered set of (name, value) tuples.
-    Object(Vec<NamedValue>),
+    Object(BTreeMap<&'static str, Result<Val>>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(Vec<u8>),
@@ -109,7 +109,7 @@ impl Val {
                 let prefix =
                     ::std::iter::repeat(" ").take(2 * indent).collect::<String>();
 
-                for &(ref k, ref v) in values {
+                for (k, v) in values {
                     s = s + &format!["{}{}: ", prefix, k];
                     s = s + &*(match v {
                         &Ok(ref value) => value.pretty_print(indent + 1),
@@ -209,9 +209,9 @@ impl Val {
         self.as_object().is_some()
     }
 
-    /// If the `Val` is a Object, returns the associated Vec<NamedValue>.
+    /// If the `Val` is a Object, returns the associated NamedValues.
     /// Returns None otherwise.
-    pub fn as_object<'a>(&'a self) -> Option<&'a Vec<NamedValue>> {
+    pub fn as_object<'a>(&'a self) -> Option<&'a NamedValues> {
         match self {
             &Val::Object(ref val) => Some(val),
             _ => None
@@ -245,7 +245,7 @@ impl fmt::Display for Val {
             &Val::Object(ref values) => {
                 try![write![f, "{{ "]];
 
-                for &(ref k, ref v) in values {
+                for (k, v) in values {
                     try![write![f, "{}: ", k]];
 
                     match v {
@@ -304,9 +304,8 @@ impl fmt::Display for Error {
 /// The result of a dissection function.
 pub type Result<T=Val> = ::std::result::Result<T,Error>;
 
-
 /// A named value-or-error.
-pub type NamedValue = (&'static str, Result<Val>);
+pub type NamedValues = BTreeMap<&'static str, Result<Val>>;
 
 /// Type of dissection functions.
 pub type Dissector = fn(&[u8]) -> Result<Val>;
@@ -381,9 +380,9 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
 
 /// Dissector of last resort: store raw bytes without interpretation.
 pub fn raw(data: &[u8]) -> Result {
-    Ok(Val::Object(vec![
-        ("raw data", Ok(Val::Bytes(data.to_vec())))
-    ]))
+    let mut obj = BTreeMap::new();
+    obj.insert("raw data", Ok(Val::Bytes(data.to_vec())));
+    Ok(Val::Object(obj))
 }
 
 
