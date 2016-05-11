@@ -94,8 +94,11 @@ pub enum Val {
     /// A network address, which can have its own special encoding.
     Address { bytes: Vec<u8>, encoded: String },
 
-    /// A sub-object is an ordered set of (name, value) tuples.
-    Object(BTreeMap<&'static str, Result<Val>>),
+    /// A sub-object is an ordered set of name, value pairs.
+    Object(NamedValues),
+
+    /// A payload, which can be dissected and fail
+    Payload(Result<Box<Val>>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(Vec<u8>),
@@ -110,71 +113,66 @@ impl Val {
                     ::std::iter::repeat(" ").take(2 * indent).collect::<String>();
 
                 for (k, v) in values {
-                    s = s + &format!["{}{}: ", prefix, k];
-                    s = s + &*(match v {
-                        &Ok(ref value) => value.pretty_print(indent + 1),
-                        &Err(ref e) => format!["<< Error: {} >>", e],
-                    });
-                    s = s + "\n";
+                    s = s + &format!["{}{}: {}\n", prefix, k, v.pretty_print(indent + 1)]
                 }
-
                 s
             }
-
+            &Val::Payload(Ok(ref v)) => format!["-> {}", v.pretty_print(indent + 1)],
+            &Val::Payload(Err(ref e)) => format!["<< Error: {} >>", e],
             _ => format!["{}", self]
         }
     }
 
     /// Returns true if the `Val` is a Signed. Returns false otherwise.
-    pub fn is_signed<'a>(&'a self) -> bool {
+    pub fn is_signed(&self) -> bool {
         self.as_signed().is_some()
     }
 
     /// If the `Val` is a Signed, returns the associated i64.
     /// Returns None otherwise.
-    pub fn as_signed<'a>(&'a self) -> Option<&'a i64> {
+    pub fn as_signed(&self) -> Option<i64> {
         match self {
-            &Val::Signed(ref val) => Some(val),
+            &Val::Signed(val) => Some(val),
             _ => None
         }
     }
 
     /// Returns true if the `Val` is an Unsigned. Returns false otherwise.
-    pub fn is_unsigned<'a>(&'a self) -> bool {
+    pub fn is_unsigned(&self) -> bool {
         self.as_unsigned().is_some()
     }
 
     /// If the `Val` is an Unsigned, returns the associated u64.
     /// Returns None otherwise.
-    pub fn as_unsigned<'a>(&'a self) -> Option<&'a u64> {
+    pub fn as_unsigned(&self) -> Option<u64> {
         match self {
-            &Val::Unsigned(ref val) => Some(val),
+            &Val::Unsigned(val) => Some(val),
             _ => None
         }
     }
 
     /// Returns true if the `Val` is a String. Returns false otherwise.
-    pub fn is_string<'a>(&'a self) -> bool {
+    pub fn is_string(&self) -> bool {
         self.as_string().is_some()
     }
 
     /// If the `Val` is a String, returns the associated String.
     /// Returns None otherwise.
-    pub fn as_string<'a>(&'a self) -> Option<&'a String> {
+    pub fn as_string<'a>(&'a self) -> Option<&'a str> {
         match self {
-            &Val::String(ref val) => Some(val),
+            &Val::String(ref val) => Some(&val),
             _ => None
         }
     }
 
     /// Returns true if the `Val` is a Symbol. Returns false otherwise.
-    pub fn is_symbol<'a>(&'a self) -> bool {
+    pub fn is_symbol(&self) -> bool {
         self.as_symbol().is_some()
     }
 
     /// If the `Val` is a Symbol, returns the associated &str.
     /// Returns None otherwise.
-    pub fn as_symbol<'a>(&'a self) -> Option<&'a str> {
+    pub fn as_symbol(&self) -> Option<&'static str> {
         match self {
             &Val::Symbol(ref val) => Some(val),
             _ => None
@@ -182,30 +180,30 @@ impl Val {
     }
 
     /// Returns true if the `Val` is a Address. Returns false otherwise.
-    pub fn is_address<'a>(&'a self) -> bool {
+    pub fn is_address(&self) -> bool {
         self.as_address_bytes().is_some()
     }
 
     /// If the `Val` is a Address, returns the associated bytes field as Vec<u8>.
     /// Returns None otherwise.
-    pub fn as_address_bytes<'a>(&'a self) -> Option<&'a Vec<u8>> {
+    pub fn as_address_bytes<'a>(&'a self) -> Option<&'a [u8]> {
         match self {
-            &Val::Address{ref bytes, ..} => Some(bytes),
+            &Val::Address{ref bytes, ..} => Some(bytes.as_slice()),
             _ => None
         }
     }
 
     /// If the `Val` is a Address, returns the associated encoded field as String.
     /// Returns None otherwise.
-    pub fn as_address_encoded<'a>(&'a self) -> Option<&'a String> {
+    pub fn as_address_encoded<'a>(&'a self) -> Option<&'a str> {
         match self {
-            &Val::Address{ref encoded, ..} => Some(encoded),
+            &Val::Address{ref encoded, ..} => Some(&encoded),
             _ => None
         }
     }
 
     /// Returns true if the `Val` is a Object. Returns false otherwise.
-    pub fn is_object<'a>(&'a self) -> bool {
+    pub fn is_object(&self) -> bool {
         self.as_object().is_some()
     }
 
@@ -218,16 +216,30 @@ impl Val {
         }
     }
 
+    /// Returns true if the `Val` is a Payload. Returns false otherwise.
+    pub fn is_payload(&self) -> bool {
+        self.as_payload().is_some()
+    }
+
+    /// If the `Val` is a Payload, returns the associated Box<Result<Val>>.
+    /// Returns None otherwise.
+    pub fn as_payload<'a>(&'a self) -> Option<&'a Result> {
+        match self {
+            &Val::Payload(ref val) => Some(val),
+            _ => None
+        }
+    }
+
     /// Returns true if the `Val` is a Bytes. Returns false otherwise.
-    pub fn is_bytes<'a>(&'a self) -> bool {
+    pub fn is_bytes(&self) -> bool {
         self.as_bytes().is_some()
     }
 
     /// If the `Val` is a Bytes, returns the associated Vec<u8>.
     /// Returns None otherwise.
-    pub fn as_bytes<'a>(&'a self) -> Option<&'a Vec<u8>> {
+    pub fn as_bytes<'a>(&'a self) -> Option<&'a [u8]> {
         match self {
-            &Val::Bytes(ref val) => Some(val),
+            &Val::Bytes(ref val) => Some(val.as_slice()),
             _ => None
         }
     }
@@ -241,24 +253,19 @@ impl fmt::Display for Val {
             &Val::String(ref s) => write![f, "\"{}\"", s],
             &Val::Symbol(ref s) => write![f, "{}", s],
             &Val::Address { ref encoded, .. } => write![f, "{}", encoded],
-
             &Val::Object(ref values) => {
                 try![write![f, "{{ "]];
 
+                //TODO: map().join()
                 for (k, v) in values {
-                    try![write![f, "{}: ", k]];
-
-                    match v {
-                        &Ok(ref value) => try![write![f, "{}", value]],
-                        &Err(ref e) => try![write![f, "<<{}>>", e]],
-                    }
-
+                    try![write![f, "{}: {}", k, v]];
                     try![write![f, ", "]];
                 }
 
                 write![f, "}}"]
             },
-
+            &Val::Payload(Ok(ref val)) => write![f, "({})", val],
+            &Val::Payload(Err(ref e)) => write![f, "<<{}>>", e],
             &Val::Bytes(ref bytes) => {
                 try![write![f, "{} B [", bytes.len()]];
 
@@ -302,13 +309,14 @@ impl fmt::Display for Error {
 }
 
 /// The result of a dissection function.
-pub type Result<T=Val> = ::std::result::Result<T,Error>;
+pub type Result<T=Box<Val>> = ::std::result::Result<T,Error>;
 
+//TODO: need something with easy access but perserving order
 /// A named value-or-error.
-pub type NamedValues = BTreeMap<&'static str, Result<Val>>;
+pub type NamedValues = BTreeMap<&'static str, Val>;
 
 /// Type of dissection functions.
-pub type Dissector = fn(&[u8]) -> Result<Val>;
+pub type Dissector = fn(&[u8]) -> Result<Box<Val>>;
 
 /// Little- or big-endian integer representations.
 pub enum Endianness {
@@ -381,8 +389,8 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
 /// Dissector of last resort: store raw bytes without interpretation.
 pub fn raw(data: &[u8]) -> Result {
     let mut obj = BTreeMap::new();
-    obj.insert("raw data", Ok(Val::Bytes(data.to_vec())));
-    Ok(Val::Object(obj))
+    obj.insert("raw data", Val::Bytes(data.to_vec()));
+    Ok(Box::new(Val::Object(obj)))
 }
 
 
