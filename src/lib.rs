@@ -65,7 +65,7 @@ extern crate byteorder;
 use byteorder::ReadBytesExt;
 use std::fmt;
 use std::io;
-use std::collections::BTreeMap;
+use std::ops::Index;
 
 /// A value parsed from a packet.
 ///
@@ -112,7 +112,7 @@ impl Val {
                 let prefix =
                     ::std::iter::repeat(" ").take(2 * indent).collect::<String>();
 
-                for (k, v) in values {
+                for &(ref k, ref v) in values {
                     s = s + &format!["{}{}: {}\n", prefix, k, v.pretty_print(indent + 1)]
                 }
                 s
@@ -245,6 +245,20 @@ impl Val {
     }
 }
 
+impl Index<&'static str> for Val {
+    type Output = Val;
+
+    // TODO: also need to provide .get() -> Option<&Val> variant
+    fn index<'a>(&'a self, index: &'static str) -> &'a Val {
+        match self {
+            &Val::Object(ref values) => &values.iter().find(|&&(ref k, ref _v)| k == &index).expect(&format!["no value for index '{}' found in Val::Object", index]).1,
+            &Val::Payload(Ok(ref val)) => &val[index],
+            &Val::Payload(Err(ref e)) => panic!(format!["found payload that failed to dissect when looking up Val::Payload index '{}': {}", index, e]),
+            _ => panic!("index on non Val::Object variant"),
+        }
+    }
+}
+
 impl fmt::Display for Val {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -257,7 +271,7 @@ impl fmt::Display for Val {
                 try![write![f, "{{ "]];
 
                 //TODO: map().join()
-                for (k, v) in values {
+                for &(ref k, ref v) in values {
                     try![write![f, "{}: {}", k, v]];
                     try![write![f, ", "]];
                 }
@@ -311,9 +325,8 @@ impl fmt::Display for Error {
 /// The result of a dissection function.
 pub type Result<T=Box<Val>> = ::std::result::Result<T,Error>;
 
-//TODO: need something with easy access but perserving order
 /// A named value-or-error.
-pub type NamedValues = BTreeMap<&'static str, Val>;
+pub type NamedValues = Vec<(&'static str, Val)>;
 
 /// Type of dissection functions.
 pub type Dissector = fn(&[u8]) -> Result<Box<Val>>;
@@ -388,8 +401,8 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
 
 /// Dissector of last resort: store raw bytes without interpretation.
 pub fn raw(data: &[u8]) -> Result {
-    let mut obj = BTreeMap::new();
-    obj.insert("raw data", Val::Bytes(data.to_vec()));
+    let mut obj = NamedValues::new();
+    obj.push(("raw data", Val::Bytes(data.to_vec())));
     Ok(Box::new(Val::Object(obj)))
 }
 

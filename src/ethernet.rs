@@ -25,8 +25,8 @@ pub fn dissect(data : &[u8]) -> Result {
     }
 
     let mut values = NamedValues::new();
-    values.insert("Destination", Val::Bytes(data[0..6].to_vec()));
-    values.insert("Source", Val::Bytes(data[6..12].to_vec()));
+    values.push(("Destination", Val::Bytes(data[0..6].to_vec())));
+    values.push(("Source", Val::Bytes(data[6..12].to_vec())));
 
     // The type/length field might be either a type or a length.
     let tlen = unsigned(&data[12..14], Endianness::BigEndian);
@@ -34,20 +34,20 @@ pub fn dissect(data : &[u8]) -> Result {
 
     match tlen {
         Ok(i) if i <= 1500 => {
-            values.insert("Length", Val::Unsigned(i));
+            values.push(("Length", Val::Unsigned(i)));
         },
 
         Ok(i) => {
             match i {
-                0x800 => values.insert("IP", Val::Payload(ip::dissect(remainder))),
-                0x806 => values.insert("ARP", Val::Payload(raw(remainder))),
-                0x8138 => values.insert("IPX", Val::Payload(raw(remainder))),
-                0x86dd => values.insert("IPv6", Val::Payload(raw(remainder))),
-                _ => values.insert("Unknown Type", Val::Payload(Err(Error::InvalidData(format!["unknown protocol: {:x}", i])))),
+                0x800 => values.push(("IP", Val::Payload(ip::dissect(remainder)))),
+                0x806 => values.push(("ARP", Val::Payload(raw(remainder)))),
+                0x8138 => values.push(("IPX", Val::Payload(raw(remainder)))),
+                0x86dd => values.push(("IPv6", Val::Payload(raw(remainder)))),
+                _ => values.push(("Unknown Type", Val::Payload(Err(Error::InvalidData(format!["unknown protocol: {:x}", i]))))),
             };
         },
         Err(e) => {
-            values.insert("Type/Length", Val::Payload(Err(e)));
+            values.push(("Type/Length", Val::Payload(Err(e))));
         },
     };
 
@@ -65,9 +65,8 @@ mod test {
         let val = *dissect(&data).unwrap();
         println!("{}", &val.pretty_print(0));
 
-        let object = val.as_object().unwrap();
-        assert_eq!(object["Destination"].as_bytes().unwrap(), &[0x84, 0x38, 0x35, 0x45, 0x49, 0x88]);
-        assert_eq!(object["Source"].as_bytes().unwrap(), &[0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02]);
-        assert!(object["IP"].as_payload().unwrap().is_err())
+        assert_eq!(val["Destination"].as_bytes().unwrap(), &[0x84, 0x38, 0x35, 0x45, 0x49, 0x88]);
+        assert_eq!(val["Source"].as_bytes().unwrap(), &[0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02]);
+        assert!(val["IP"].as_payload().unwrap().is_err())
     }
 }

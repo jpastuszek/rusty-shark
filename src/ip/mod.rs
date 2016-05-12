@@ -33,46 +33,46 @@ pub fn dissect(data : &[u8]) -> Result {
 
     // IP version (should be "4")
     let version = data[0] >> 4;
-    values.insert("Version", Val::Unsigned(version as u64));
+    values.push(("Version", Val::Unsigned(version as u64)));
 
     // Internet Header Length (IHL): number of 32b words in header
     let words = data[0] & 0x0f;
-    values.insert("IHL", Val::Unsigned(words as u64));
+    values.push(("IHL", Val::Unsigned(words as u64)));
 
     // Differentiated Services Code Point (DSCP): RFC 2474
     let dscp = data[1] >> 2;
-    values.insert("DSCP", Val::Unsigned(dscp as u64));
+    values.push(("DSCP", Val::Unsigned(dscp as u64)));
 
     // Explicit Congestion Notification (ECN): RFC 3168
     let ecn = data[1] & 0x03;
-    values.insert("ECN", Val::Unsigned(ecn as u64));
+    values.push(("ECN", Val::Unsigned(ecn as u64)));
 
     // Total length (including header)
     let length = unsigned(&data[2..4], Endianness::BigEndian);
-    values.insert("Length", Val::Unsigned(length.unwrap()));
+    values.push(("Length", Val::Unsigned(length.unwrap())));
 
     // Identification (of datagraph fragments): RFC 6864
-    values.insert("Identification", Val::Unsigned(data[8] as u64));
+    values.push(("Identification", Val::Unsigned(data[8] as u64)));
 
     // Protocol number (assigned by IANA)
     let protocol = data[9];
-    values.insert("Protocol", Val::Unsigned(protocol as u64));
+    values.push(("Protocol", Val::Unsigned(protocol as u64)));
 
     // Header checksum
-    values.insert("Checksum", Val::Bytes(data[10..12].to_vec()));
+    values.push(("Checksum", Val::Bytes(data[10..12].to_vec())));
 
     // Source and destination addresses
     let source = &data[12..16];
-    values.insert("Source", Val::Address {
+    values.push(("Source", Val::Address {
         bytes: source.to_vec(),
         encoded: source.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
-    });
+    }));
 
     let dest = &data[16..20];
-    values.insert("Destination", Val::Address {
+    values.push(("Destination", Val::Address {
         bytes: dest.to_vec(),
         encoded: dest.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
-    });
+    }));
 
     // Parse the remainder according to the specified protocol.
     let remainder = &data[20..];
@@ -81,7 +81,7 @@ pub fn dissect(data : &[u8]) -> Result {
         _ => raw,
     };
 
-    values.insert("Protocol Data", Val::Payload(dissect_pdu(remainder)));
+    values.push(("Protocol Data", Val::Payload(dissect_pdu(remainder))));
 
     Ok(Box::new(Val::Object(values)))
 }
@@ -97,22 +97,16 @@ mod test {
         let val = *dissect(&data).unwrap();
         println!("{}", &val.pretty_print(0));
 
-        let object = val.as_object().unwrap();
-        assert_eq!(object["Version"].as_unsigned().unwrap(), 4);
-        assert_eq!(object["IHL"].as_unsigned().unwrap(), 5);
-        assert_eq!(object["DSCP"].as_unsigned().unwrap(), 0);
-        assert_eq!(object["ECN"].as_unsigned().unwrap(), 0);
-        assert_eq!(object["Length"].as_unsigned().unwrap(), 60);
-        assert_eq!(object["Identification"].as_unsigned().unwrap(), 46);
-        assert_eq!(object["Protocol"].as_unsigned().unwrap(), 6);
-        assert_eq!(object["Checksum"].as_bytes().unwrap(), &[0xa1u8, 0x24]);
-        assert_eq!(object["Source"].as_address_encoded().unwrap(), "46.137.186.243");
-        assert_eq!(object["Destination"].as_address_encoded().unwrap(), "192.168.1.115");
-        assert_eq!(object["Protocol Data"]
-                   .as_payload().unwrap()
-                   .as_ref().unwrap()
-                   .as_object().unwrap()["raw data"]
-                   .as_bytes().unwrap(),
-                   &data[20..]);
+        assert_eq!(val["Version"].as_unsigned().unwrap(), 4);
+        assert_eq!(val["IHL"].as_unsigned().unwrap(), 5);
+        assert_eq!(val["DSCP"].as_unsigned().unwrap(), 0);
+        assert_eq!(val["ECN"].as_unsigned().unwrap(), 0);
+        assert_eq!(val["Length"].as_unsigned().unwrap(), 60);
+        assert_eq!(val["Identification"].as_unsigned().unwrap(), 46);
+        assert_eq!(val["Protocol"].as_unsigned().unwrap(), 6);
+        assert_eq!(val["Checksum"].as_bytes().unwrap(), &[0xa1u8, 0x24]);
+        assert_eq!(val["Source"].as_address_encoded().unwrap(), "46.137.186.243");
+        assert_eq!(val["Destination"].as_address_encoded().unwrap(), "192.168.1.115");
+        assert_eq!(val["Protocol Data"]["raw data"].as_bytes().unwrap(), &data[20..]);
     }
 }
