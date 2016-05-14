@@ -254,7 +254,16 @@ impl Val {
         }
     }
 
-    pub fn get_path<'a>(&'a self, path: &str) -> Result<&'a Val, AccessError> {
+    pub fn get_path<'a>(&'a self, keys: &[&str]) -> Result<&'a Val, AccessError> {
+        keys.iter().fold(Ok(self), |val, index| {
+            match val {
+                Ok(val) => val.get(index),
+                Err(_) => return val
+            }
+        })
+    }
+
+    pub fn lookup<'a>(&'a self, path: &str) -> Result<&'a Val, AccessError> {
         path.split('.').fold(Ok(self), |val, index| {
             match val {
                 Ok(val) => val.get(index),
@@ -550,6 +559,11 @@ mod test {
 
     #[test]
     fn val_get_path() {
-        assert_eq!(test_object().get_path("foo.bar").unwrap(), &Val::Unsigned(42));
+        assert_eq!(test_object().get_path(&["foo", "bar"]).unwrap(), &Val::Unsigned(42));
+    }
+
+    #[test]
+    fn val_lookup() {
+        assert_eq!(test_object().lookup("foo.bar").unwrap(), &Val::Unsigned(42));
     }
 }
