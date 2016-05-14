@@ -16,16 +16,16 @@
 //! See [RFC 791](https://tools.ietf.org/html/rfc791).
 
 use Endianness;
-use Error;
-use Result;
+use DissectError;
+use DissectResult;
 use Val;
 use NamedValues;
 use raw;
 use unsigned;
 
-pub fn dissect(data : &[u8]) -> Result {
+pub fn dissect(data : &[u8]) -> DissectResult {
     if data.len() < 20 {
-        return Err(Error::Underflow { expected: 20, have: data.len(),
+        return Err(DissectError::Underflow { expected: 20, have: data.len(),
             message: "An IP packet must be at least 20 B".to_string() })
     }
 

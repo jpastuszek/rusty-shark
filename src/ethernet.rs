@@ -10,17 +10,17 @@
 //! Dissection of Ethernet (IEEE 802.3) frames.
 
 use Endianness;
-use Error;
-use Result;
+use DissectError;
+use DissectResult;
 use Val;
 use NamedValues;
 use ip;
 use raw;
 use unsigned;
 
-pub fn dissect(data : &[u8]) -> Result {
+pub fn dissect(data : &[u8]) -> DissectResult {
     if data.len() < 14 {
-        return Err(Error::Underflow { expected: 14, have: data.len(),
+        return Err(DissectError::Underflow { expected: 14, have: data.len(),
             message: "An Ethernet frame must be at least 14 B".to_string() })
     }
 
@@ -43,7 +43,7 @@ pub fn dissect(data : &[u8]) -> Result {
                 0x806 => values.push(("ARP", Val::Payload(raw(remainder)))),
                 0x8138 => values.push(("IPX", Val::Payload(raw(remainder)))),
                 0x86dd => values.push(("IPv6", Val::Payload(raw(remainder)))),
-                _ => values.push(("Unknown Type", Val::Payload(Err(Error::InvalidData(format!["unknown protocol: {:x}", i]))))),
+                _ => values.push(("Unknown Type", Val::Payload(Err(DissectError::InvalidData(format!["unknown protocol: {:x}", i]))))),
             };
         },
         Err(e) => {

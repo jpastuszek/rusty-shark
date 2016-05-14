@@ -41,8 +41,8 @@
 //! The `rshark` library provides packet dissection functions such as
 //! `rshark::ethernet::dissect()`. Every such dissection function, which should
 //! conform to the `rshark::Dissector` function type, takes as input a slice of bytes
-//! and returns an `rshark::Result` (which defaults to
-//! `Result<rshark::Val, rshark::Error>`).
+//! and returns an `rshark::DissectResult` (which defaults to
+//! `DissectResult<rshark::Val, rshark::Error>`).
 //! Usage is pretty simple:
 //!
 //! ```
@@ -66,6 +66,7 @@ use byteorder::ReadBytesExt;
 use std::fmt;
 use std::io;
 use std::ops::Index;
+use std::error::Error;
 
 /// A value parsed from a packet.
 ///
@@ -98,7 +99,7 @@ pub enum Val {
     Object(NamedValues),
 
     /// A payload, which can be dissected and fail
-    Payload(Result<Box<Val>>),
+    Payload(DissectResult<Box<Val>>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(Vec<u8>),
@@ -221,9 +222,9 @@ impl Val {
         self.as_payload().is_some()
     }
 
-    /// If the `Val` is a Payload, returns the associated Box<Result<Val>>.
+    /// If the `Val` is a Payload, returns the associated Box<DissectResult<Val>>.
     /// Returns None otherwise.
-    pub fn as_payload<'a>(&'a self) -> Option<&'a Result> {
+    pub fn as_payload<'a>(&'a self) -> Option<&'a DissectResult> {
         match self {
             &Val::Payload(ref val) => Some(val),
             _ => None
@@ -243,18 +244,65 @@ impl Val {
             _ => None
         }
     }
+
+    fn get<'a>(&'a self, index: &str) -> Result<&'a Val, AccessError> {
+        match self {
+            &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index).ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
+            &Val::Payload(Ok(ref val)) => val.get(index),
+            &Val::Payload(Err(ref e)) => Err(AccessError::dissect_error(index, e)),
+            _ => Err(AccessError::leaf_variant(self))
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AccessError {
+    NotFound(String),
+    DissectError(String),
+    LeafVariant(String),
+}
+
+impl AccessError {
+    fn not_found(index: &str, val: &Val) -> AccessError {
+        AccessError::NotFound(format!["no value for index '{}' found in: {:?}", index, val])
+    }
+
+    fn dissect_error(index: &str, error: &DissectError) -> AccessError {
+        AccessError::DissectError(format!["Val::Payload under index '{}' contains error: {}", index, error])
+    }
+
+    fn leaf_variant(val: &Val) -> AccessError {
+        AccessError::LeafVariant(format!["index on non Val::Object variant: {:?}", val])
+    }
+}
+
+impl Error for AccessError {
+    fn description(&self) -> &str {
+        match self {
+            &AccessError::NotFound(ref desc) => desc,
+            &AccessError::DissectError(ref desc) => desc,
+            &AccessError::LeafVariant(ref desc) => desc,
+        }
+    }
+}
+
+impl fmt::Display for AccessError {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &AccessError::NotFound(ref desc) => write![f, "access error: {}", desc],
+            &AccessError::DissectError(ref desc) => write![f, "access error: {}", desc],
+            &AccessError::LeafVariant(ref desc) => write![f, "access error: {}", desc],
+        }
+    }
 }
 
 impl Index<&'static str> for Val {
     type Output = Val;
 
-    // TODO: also need to provide .get() -> Option<&Val> variant
-    fn index<'a>(&'a self, index: &'static str) -> &'a Val {
-        match self {
-            &Val::Object(ref values) => &values.iter().find(|&&(ref k, ref _v)| k == &index).expect(&format!["no value for index '{}' found in: {:?}", index, self]).1,
-            &Val::Payload(Ok(ref val)) => &val[index],
-            &Val::Payload(Err(ref e)) => panic!(format!["Val::Payload under index '{}' contains error: {}", index, e]),
-            _ => panic!(format!["index on non Val::Object variant: {:?}", self]),
+    fn index<'a>(&'a self, index: &str) -> &'a Val {
+        match self.get(index) {
+            Err(err) => panic!(format!["indexing error: {}", err]),
+            Ok(val) => val
         }
     }
 }
@@ -305,31 +353,31 @@ impl fmt::Display for Val {
 
 /// An error related to packet dissection (underflow, bad value, etc.).
 #[derive(Debug, PartialEq)]
-pub enum Error {
+pub enum DissectError {
     Underflow { expected: usize, have: usize, message: String, },
     InvalidData(String),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for DissectError {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &Error::Underflow { expected, have, ref message } =>
+            &DissectError::Underflow { expected, have, ref message } =>
                 write![f, "underflow (expected {}, have {}): {}",
                     expected, have, message],
 
-            &Error::InvalidData(ref msg) => write![f, "invalid data: {}", msg],
+            &DissectError::InvalidData(ref msg) => write![f, "invalid data: {}", msg],
         }
     }
 }
 
 /// The result of a dissection function.
-pub type Result<T=Box<Val>> = ::std::result::Result<T,Error>;
+pub type DissectResult<T = Box<Val>> = Result<T, DissectError>;
 
 /// A named value-or-error.
 pub type NamedValues = Vec<(&'static str, Val)>;
 
 /// Type of dissection functions.
-pub type Dissector = fn(&[u8]) -> Result<Box<Val>>;
+pub type Dissector = fn(&[u8]) -> DissectResult<Box<Val>>;
 
 /// Little- or big-endian integer representations.
 pub enum Endianness {
@@ -340,9 +388,9 @@ pub enum Endianness {
 /// Parse a signed integer of a given endianness from a byte buffer.
 ///
 /// The size of the buffer will be used to determine the size of the integer
-/// that should be parsed (i8, i16, i32 or i64), but the result will be stored
+/// that should be parsed (i8, i16, i32 or i64), but the DissectResult will be stored
 /// in an i64.
-pub fn signed(buffer: &[u8], endianness: Endianness) -> Result<i64> {
+pub fn signed(buffer: &[u8], endianness: Endianness) -> DissectResult<i64> {
     let mut reader = io::Cursor::new(buffer);
 
     match endianness {
@@ -352,7 +400,7 @@ pub fn signed(buffer: &[u8], endianness: Endianness) -> Result<i64> {
                 2 => Ok(reader.read_i16::<byteorder::BigEndian>().unwrap() as i64),
                 4 => Ok(reader.read_i32::<byteorder::BigEndian>().unwrap() as i64),
                 8 => Ok(reader.read_i64::<byteorder::BigEndian>().unwrap()),
-                x => Err(Error::InvalidData(format!["Invalid integer size: {} B", x])),
+                x => Err(DissectError::InvalidData(format!["Invalid integer size: {} B", x])),
             }
         }
 
@@ -362,7 +410,7 @@ pub fn signed(buffer: &[u8], endianness: Endianness) -> Result<i64> {
                 2 => Ok(reader.read_i16::<byteorder::LittleEndian>().unwrap() as i64),
                 4 => Ok(reader.read_i32::<byteorder::LittleEndian>().unwrap() as i64),
                 8 => Ok(reader.read_i64::<byteorder::LittleEndian>().unwrap()),
-                x => Err(Error::InvalidData(format!["Invalid integer size: {} B", x])),
+                x => Err(DissectError::InvalidData(format!["Invalid integer size: {} B", x])),
             }
         }
     }
@@ -371,9 +419,9 @@ pub fn signed(buffer: &[u8], endianness: Endianness) -> Result<i64> {
 /// Parse a signed integer of a given endianness from a byte buffer.
 ///
 /// The size of the buffer will be used to determine the size of the integer
-/// that should be parsed (u8, u16, u32 or u64), but the result will be stored
+/// that should be parsed (u8, u16, u32 or u64), but the DissectResult will be stored
 /// in a u64.
-pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
+pub fn unsigned(buffer: &[u8], endianness: Endianness) -> DissectResult<u64> {
     let mut reader = io::Cursor::new(buffer);
 
     match endianness {
@@ -383,7 +431,7 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
                 2 => Ok(reader.read_u16::<byteorder::BigEndian>().unwrap() as u64),
                 4 => Ok(reader.read_u32::<byteorder::BigEndian>().unwrap() as u64),
                 8 => Ok(reader.read_u64::<byteorder::BigEndian>().unwrap()),
-                x => Err(Error::InvalidData(format!["Invalid integer size: {} B", x])),
+                x => Err(DissectError::InvalidData(format!["Invalid integer size: {} B", x])),
             }
         }
 
@@ -393,14 +441,14 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64> {
                 2 => Ok(reader.read_u16::<byteorder::LittleEndian>().unwrap() as u64),
                 4 => Ok(reader.read_u32::<byteorder::LittleEndian>().unwrap() as u64),
                 8 => Ok(reader.read_u64::<byteorder::LittleEndian>().unwrap()),
-                x => Err(Error::InvalidData(format!["Invalid integer size: {} B", x])),
+                x => Err(DissectError::InvalidData(format!["Invalid integer size: {} B", x])),
             }
         }
     }
 }
 
 /// Dissector of last resort: store raw bytes without interpretation.
-pub fn raw(data: &[u8]) -> Result {
+pub fn raw(data: &[u8]) -> DissectResult {
     let mut obj = NamedValues::new();
     obj.push(("raw data", Val::Bytes(data.to_vec())));
     Ok(Box::new(Val::Object(obj)))
@@ -428,37 +476,66 @@ mod test {
         let mut payload = NamedValues::new();
 
         payload.push(("bar", Val::Unsigned(42)));
-        obj.push(("foo", Val::Payload(Err(Error::InvalidData("error".to_string())))));
+        obj.push(("foo", Val::Payload(Err(DissectError::InvalidData("error".to_string())))));
 
         Val::Object(obj)
     }
 
     #[test]
-    fn val_index_access() {
-        let _ = test_object()["foo"]["bar"];
+    fn val_index() {
+        assert_eq!(test_object()["foo"]["bar"], Val::Unsigned(42));
     }
 
     #[test]
-    #[should_panic(expected = "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
-    fn val_index_access_not_found() {
+    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
+    fn val_index_not_found() {
         let _ = test_object()["baz"]["bar"];
     }
 
     #[test]
-    #[should_panic(expected = "no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
-    fn val_index_access_not_found2() {
+    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
+    fn val_index_not_found2() {
         let _ = test_object()["foo"]["baz"];
     }
 
     #[test]
-    #[should_panic(expected = "Val::Payload under index 'bar' contains error: invalid data: error")]
-    fn val_index_access_err_payload() {
+    #[should_panic(expected = "indexing error: access error: Val::Payload under index 'bar' contains error: invalid data: error")]
+    fn val_index_dissect_err() {
         let _ = test_object_err_payload()["foo"]["bar"];
     }
 
     #[test]
-    #[should_panic(expected = "index on non Val::Object variant: Unsigned(42)")]
-    fn val_index_access_non_object() {
+    #[should_panic(expected = "indexing error: access error: index on non Val::Object variant: Unsigned(42)")]
+    fn val_index_non_object() {
         let _ = Val::Unsigned(42)["baz"];
+    }
+
+    #[test]
+    fn val_get() {
+        assert_eq!(test_object().get("foo").unwrap().get("bar").unwrap(), &Val::Unsigned(42));
+    }
+
+    #[test]
+    fn val_get_not_found() {
+        match test_object().get("baz").unwrap_err() {
+            AccessError::NotFound(ref desc) => assert_eq!(desc, "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])"),
+            _ => panic!("wrong error")
+        }
+    }
+
+    #[test]
+    fn val_get_dissect_err() {
+        match test_object_err_payload()["foo"].get("bar").unwrap_err() {
+            AccessError::DissectError(ref desc) => assert_eq!(desc, "Val::Payload under index 'bar' contains error: invalid data: error"),
+            _ => panic!("wrong error")
+        }
+    }
+
+    #[test]
+    fn val_get_non_object() {
+        match Val::Unsigned(42).get("baz").unwrap_err() {
+            AccessError::LeafVariant(ref desc) => assert_eq!(desc, "index on non Val::Object variant: Unsigned(42)"),
+            _ => panic!("wrong error")
+        }
     }
 }
