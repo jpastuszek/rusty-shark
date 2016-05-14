@@ -245,13 +245,22 @@ impl Val {
         }
     }
 
-    fn get<'a>(&'a self, index: &str) -> Result<&'a Val, AccessError> {
+    pub fn get<'a>(&'a self, index: &str) -> Result<&'a Val, AccessError> {
         match self {
             &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index).ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
             &Val::Payload(Ok(ref val)) => val.get(index),
             &Val::Payload(Err(ref e)) => Err(AccessError::dissect_error(index, e)),
             _ => Err(AccessError::leaf_variant(self))
         }
+    }
+
+    pub fn get_path<'a>(&'a self, path: &str) -> Result<&'a Val, AccessError> {
+        path.split('.').fold(Ok(self), |val, index| {
+            match val {
+                Ok(val) => val.get(index),
+                Err(_) => return val
+            }
+        })
     }
 }
 
@@ -537,5 +546,10 @@ mod test {
             AccessError::LeafVariant(ref desc) => assert_eq!(desc, "index on non Val::Object variant: Unsigned(42)"),
             _ => panic!("wrong error")
         }
+    }
+
+    #[test]
+    fn val_get_path() {
+        assert_eq!(test_object().get_path("foo.bar").unwrap(), &Val::Unsigned(42));
     }
 }
