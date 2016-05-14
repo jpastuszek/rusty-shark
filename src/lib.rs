@@ -251,10 +251,10 @@ impl Index<&'static str> for Val {
     // TODO: also need to provide .get() -> Option<&Val> variant
     fn index<'a>(&'a self, index: &'static str) -> &'a Val {
         match self {
-            &Val::Object(ref values) => &values.iter().find(|&&(ref k, ref _v)| k == &index).expect(&format!["no value for index '{}' found in Val::Object", index]).1,
+            &Val::Object(ref values) => &values.iter().find(|&&(ref k, ref _v)| k == &index).expect(&format!["no value for index '{}' found in: {:?}", index, self]).1,
             &Val::Payload(Ok(ref val)) => &val[index],
-            &Val::Payload(Err(ref e)) => panic!(format!["found payload that failed to dissect when looking up Val::Payload index '{}': {}", index, e]),
-            _ => panic!("index on non Val::Object variant"),
+            &Val::Payload(Err(ref e)) => panic!(format!["Val::Payload under index '{}' contains error: {}", index, e]),
+            _ => panic!(format!["index on non Val::Object variant: {:?}", self]),
         }
     }
 }
@@ -406,6 +406,59 @@ pub fn raw(data: &[u8]) -> Result {
     Ok(Box::new(Val::Object(obj)))
 }
 
-
 pub mod ethernet;
 pub mod ip;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn test_object() -> Val {
+        let mut obj = NamedValues::new();
+        let mut payload = NamedValues::new();
+
+        payload.push(("bar", Val::Unsigned(42)));
+        obj.push(("foo", Val::Payload(Ok(Box::new(Val::Object(payload))))));
+
+        Val::Object(obj)
+    }
+
+    fn test_object_err_payload() -> Val {
+        let mut obj = NamedValues::new();
+        let mut payload = NamedValues::new();
+
+        payload.push(("bar", Val::Unsigned(42)));
+        obj.push(("foo", Val::Payload(Err(Error::InvalidData("error".to_string())))));
+
+        Val::Object(obj)
+    }
+
+    #[test]
+    fn val_index_access() {
+        let _ = test_object()["foo"]["bar"];
+    }
+
+    #[test]
+    #[should_panic(expected = "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
+    fn val_index_access_not_found() {
+        let _ = test_object()["baz"]["bar"];
+    }
+
+    #[test]
+    #[should_panic(expected = "no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
+    fn val_index_access_not_found2() {
+        let _ = test_object()["foo"]["baz"];
+    }
+
+    #[test]
+    #[should_panic(expected = "Val::Payload under index 'bar' contains error: invalid data: error")]
+    fn val_index_access_err_payload() {
+        let _ = test_object_err_payload()["foo"]["bar"];
+    }
+
+    #[test]
+    #[should_panic(expected = "index on non Val::Object variant: Unsigned(42)")]
+    fn val_index_access_non_object() {
+        let _ = Val::Unsigned(42)["baz"];
+    }
+}
