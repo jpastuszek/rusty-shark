@@ -263,11 +263,11 @@ impl Val {
         })
     }
 
-    pub fn lookup<'a>(&'a self, path: &str) -> Result<&'a Val, AccessError> {
-        path.split('.').fold(Ok(self), |val, index| {
+    pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a Val> {
+        path.split('.').fold(Some(self), |val, index| {
             match val {
-                Ok(val) => val.get(index),
-                Err(_) => return val
+                Some(val) => val.get(index).ok(),
+                None => return None
             }
         })
     }
@@ -564,6 +564,11 @@ mod test {
 
     #[test]
     fn val_lookup() {
-        assert_eq!(test_object().lookup("foo.bar").unwrap(), &Val::Unsigned(42));
+        assert_eq!(test_object().lookup("foo.bar"), Some(&Val::Unsigned(42)));
+    }
+
+    #[test]
+    fn val_lookup_none() {
+        assert_eq!(test_object().lookup("foo.bar.baz"), None);
     }
 }
