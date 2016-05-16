@@ -53,9 +53,10 @@ pub fn dissect(data : &[u8]) -> DissectResult {
             message: "TCP packet offset (header length) greater than available data".to_string() });
     }
 
-    //TODO: support of Val::Flags?
     let flags = data[14];
-    values.push(("Flags", Val::Unsigned(flags as u64)));
+    values.push(("Flags", Val::BitFlags8(flags, [
+                                         Some("CWR"), Some("ECE"), Some("URG"), Some("ACK"),
+                                         Some("PSH"), Some("RST"), Some("SYN"), Some("FIN")])));
 
     let window = unsigned(&data[14..16], Endianness::BigEndian);
     values.push(("Window", Val::Unsigned(window.unwrap())));

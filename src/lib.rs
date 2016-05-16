@@ -99,6 +99,9 @@ pub enum Val {
     /// A network address, which can have its own special encoding.
     Address { bytes: Vec<u8>, encoded: String },
 
+    /// Single byte bit flags.
+    BitFlags8(u8, [Option<&'static str>; 8]),
+
     /// A sub-object is an ordered set of name, value pairs.
     Object(NamedValues),
 
@@ -342,6 +345,22 @@ impl fmt::Display for Val {
             &Val::String(ref s) => write![f, "\"{}\"", s],
             &Val::Symbol(ref s) => write![f, "{}", s],
             &Val::Address { ref encoded, .. } => write![f, "{}", encoded],
+            &Val::BitFlags8(ref flags, ref desc) => {
+                let mut bit = 1u8;
+                write![f, "({})", (0..8).into_iter().filter_map(move |i| {
+                    let val = if let Some(desc) = desc[i] {
+                        if flags & bit > 0 {
+                            Some(desc)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    bit = bit << 1;
+                    val
+                }).format("+", |val, f| f(&format_args!("{}", val)))]
+            },
             &Val::Object(ref values) => {
                 write![f, "{{ {} }}", values.iter()
                     .format(", ", |kv, f| f(&format_args!("{}: {}", kv.0, kv.1)))]
