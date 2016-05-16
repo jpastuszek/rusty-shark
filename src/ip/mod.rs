@@ -36,8 +36,14 @@ pub fn dissect(data : &[u8]) -> DissectResult {
     values.push(("Version", Val::Unsigned(version as u64)));
 
     // Internet Header Length (IHL): number of 32b words in header
-    let words = data[0] & 0x0f;
-    values.push(("IHL", Val::Unsigned(words as u64)));
+    let ihl = data[0] & 0x0f;
+    values.push(("IHL", Val::Unsigned(ihl as u64)));
+
+    let header_lenght = ihl as usize * 4;
+    if header_lenght > data.len() {
+        return Err(DissectError::Underflow { expected: header_lenght, have: data.len(),
+            message: "IP packet IHL (header length) greater than available data".to_string() });
+    }
 
     // Differentiated Services Code Point (DSCP): RFC 2474
     let dscp = data[1] >> 2;
@@ -74,17 +80,23 @@ pub fn dissect(data : &[u8]) -> DissectResult {
         encoded: dest.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
     }));
 
-    // Parse the remainder according to the specified protocol.
-    let remainder = &data[20..];
-    let dissect_pdu = match protocol {
-        // TODO: UDP, TCP, etc.
-        _ => raw,
-    };
+    if header_lenght > 20 {
+        let options = &data[20..header_lenght];
+        values.push(("Options", Val::Bytes(options.to_vec())));
+    }
 
-    values.push(("Protocol Data", Val::Payload(dissect_pdu(remainder))));
+    // Parse the remainder according to the specified protocol.
+    let remainder = &data[header_lenght..];
+    match protocol {
+        6 => values.push(("TCP", Val::Payload(tcp::dissect(remainder)))),
+        // TODO: UDP, TCP, etc.
+        _ => values.push(("Unknown", Val::Payload(raw(remainder))))
+    };
 
     Ok(Box::new(Val::Object(values)))
 }
+
+mod tcp;
 
 #[cfg(test)]
 mod test {
@@ -92,9 +104,10 @@ mod test {
 
     #[test]
     fn dissect_ip() {
-        let data = [69, 0, 0, 60, 0, 0, 64, 0, 46, 6, 161, 36, 46, 137, 186, 243, 192, 168, 1, 115, 1, 187, 252, 235, 74, 97, 130, 175, 50, 220, 74, 238, 160, 18, 56, 144, 237, 13, 0, 0, 2, 4, 5, 180, 4, 2, 8, 10, 15, 68, 221, 156, 29, 26, 35, 62, 1, 3, 3, 6];
+        let data = [69, 0, 0, 60, 0, 0, 64, 0, 46, 6, 161, 36, 46, 137, 186, 243, 192, 168, 1, 115, 1, 187, 252, 235, 74, 97, 130, 175, 50, 220, 74, 238, 5, 18, 56, 144, 237, 13, 0, 0, 2, 4, 5, 180, 4, 2, 8, 10, 15, 68, 221, 156, 29, 26, 35, 62, 1, 3, 3, 6];
 
         let val = *dissect(&data).unwrap();
+        println!("{}", &val);
         println!("{}", &val.pretty_print(0));
 
         assert_eq!(val["Version"].as_unsigned().unwrap(), 4);
@@ -107,6 +120,6 @@ mod test {
         assert_eq!(val["Checksum"].as_bytes().unwrap(), &[0xa1u8, 0x24]);
         assert_eq!(val["Source"].as_address_encoded().unwrap(), "46.137.186.243");
         assert_eq!(val["Destination"].as_address_encoded().unwrap(), "192.168.1.115");
-        assert_eq!(val["Protocol Data"]["raw data"].as_bytes().unwrap(), &data[20..]);
+        assert!(val["TCP"].is_payload());
     }
 }

@@ -61,12 +61,16 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/musec/rusty-shark/master/artwork/wordmark.png")]
 
 extern crate byteorder;
+#[macro_use]
+extern crate itertools;
 
 use byteorder::ReadBytesExt;
 use std::fmt;
 use std::io;
 use std::ops::Index;
 use std::error::Error;
+
+use itertools::Itertools;
 
 /// A value parsed from a packet.
 ///
@@ -103,6 +107,10 @@ pub enum Val {
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(Vec<u8>),
+
+    // TODO: labeled or enum variant for enumerations like protocols: 6 (tcp), 17 (udp)
+    // try avoid Boxing (allocations) - perhaps pointer to detail dissect function
+    // Signed(i64, Option<Dissector>)
 }
 
 impl Val {
@@ -247,7 +255,8 @@ impl Val {
 
     pub fn get<'a>(&'a self, index: &str) -> Result<&'a Val, AccessError> {
         match self {
-            &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index).ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
+            &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index)
+                .ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
             &Val::Payload(Ok(ref val)) => val.get(index),
             &Val::Payload(Err(ref e)) => Err(AccessError::dissect_error(index, e)),
             _ => Err(AccessError::leaf_variant(self))
@@ -334,15 +343,8 @@ impl fmt::Display for Val {
             &Val::Symbol(ref s) => write![f, "{}", s],
             &Val::Address { ref encoded, .. } => write![f, "{}", encoded],
             &Val::Object(ref values) => {
-                try![write![f, "{{ "]];
-
-                //TODO: map().join()
-                for &(ref k, ref v) in values {
-                    try![write![f, "{}: {}", k, v]];
-                    try![write![f, ", "]];
-                }
-
-                write![f, "}}"]
+                write![f, "{{ {} }}", values.iter()
+                    .format(", ", |kv, f| f(&format_args!("{}: {}", kv.0, kv.1)))]
             },
             &Val::Payload(Ok(ref val)) => write![f, "({})", val],
             &Val::Payload(Err(ref e)) => write![f, "<<{}>>", e],
