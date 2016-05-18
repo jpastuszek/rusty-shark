@@ -214,6 +214,14 @@ impl Val {
         }
     }
 
+    pub fn as_bitflags8_bit_no(&self, bit: u8) -> Option<bool> {
+        assert!(bit < 8, "cannot access bit higher than 8'th");
+        match self {
+            &Val::BitFlags8(flag, _) => Some(1 << bit & flag > 0),
+            _ => None
+        }
+    }
+
     /// Returns true if the `Val` is a Object. Returns false otherwise.
     pub fn is_object(&self) -> bool {
         self.as_object().is_some()
@@ -347,7 +355,7 @@ impl fmt::Display for Val {
             &Val::Address { ref encoded, .. } => write![f, "{}", encoded],
             &Val::BitFlags8(ref flags, ref desc) => {
                 let mut bit = 1u8;
-                write![f, "({})", (0..8).into_iter().filter_map(move |i| {
+                write![f, "{:08b} ({})", flags, (0..8).into_iter().filter_map(move |i| {
                     let val = if let Some(desc) = desc[i] {
                         if flags & bit > 0 {
                             Some(desc)
@@ -520,6 +528,16 @@ mod test {
         Val::Object(obj)
     }
 
+    fn flags_test_object() -> Val {
+        let mut obj = NamedValues::new();
+
+        obj.push(("flags", Val::BitFlags8(0b01011100, [
+                                          Some("foo"), None, Some("bar"), None,
+                                          None, None, Some("baz"), None])));
+
+        Val::Object(obj)
+    }
+
     #[test]
     fn val_index() {
         assert_eq!(test_object()["foo"]["bar"], Val::Unsigned(42));
@@ -591,5 +609,25 @@ mod test {
     #[test]
     fn val_lookup_none() {
         assert_eq!(test_object().lookup("foo.bar.baz"), None);
+    }
+
+    #[test]
+    fn flags_access_by_bit_no() {
+        let ref flags = flags_test_object()["flags"];
+        assert_eq!(flags.as_bitflags8_bit_no(0), Some(false));
+        assert_eq!(flags.as_bitflags8_bit_no(1), Some(false));
+        assert_eq!(flags.as_bitflags8_bit_no(2), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_no(3), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_no(4), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_no(5), Some(false));
+        assert_eq!(flags.as_bitflags8_bit_no(6), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_no(7), Some(false));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot access bit higher than 8'th")]
+    fn flags_access_by_bit_no_overflow() {
+        let ref flags = flags_test_object()["flags"];
+        assert_eq!(flags.as_bitflags8_bit_no(9), Some(false));
     }
 }
