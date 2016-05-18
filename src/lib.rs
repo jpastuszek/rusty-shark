@@ -214,10 +214,29 @@ impl Val {
         }
     }
 
+    pub fn is_bitflags8(&self) -> bool {
+        match self {
+            &Val::BitFlags8(_, _) => true,
+            _ => false
+        }
+    }
+
     pub fn as_bitflags8_bit_no(&self, bit: u8) -> Option<bool> {
         assert!(bit < 8, "cannot access bit higher than 8'th");
         match self {
             &Val::BitFlags8(flag, _) => Some(1 << bit & flag > 0),
+            _ => None
+        }
+    }
+
+    pub fn as_bitflags8_bit_name(&self, name: &str) -> Option<bool> {
+        match self {
+            &Val::BitFlags8(_, ref names) => {
+                if let Some(pos) = names.into_iter().position(|&n| n == Some(name)) {
+                    return self.as_bitflags8_bit_no(pos as u8);
+                }
+                None
+            },
             _ => None
         }
     }
@@ -630,4 +649,14 @@ mod test {
         let ref flags = flags_test_object()["flags"];
         assert_eq!(flags.as_bitflags8_bit_no(9), Some(false));
     }
+
+    #[test]
+    fn flags_access_by_bit_name() {
+        let ref flags = flags_test_object()["flags"];
+        assert_eq!(flags.as_bitflags8_bit_name("foo"), Some(false));
+        assert_eq!(flags.as_bitflags8_bit_name("bar"), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_name("baz"), Some(true));
+        assert_eq!(flags.as_bitflags8_bit_name("quix"), None);
+    }
+
 }
