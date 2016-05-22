@@ -9,47 +9,41 @@
 
 //! Dissection of Ethernet (IEEE 802.3) frames.
 
-use Endianness;
 use DissectError;
 use DissectResult;
 use Val;
 use NamedValues;
 use ip;
 use raw;
-use unsigned;
+use nom::{IResult, Needed, be_u16};
 
 pub fn dissect(data : &[u8]) -> DissectResult {
-    if data.len() < 14 {
-        return Err(DissectError::Underflow { expected: 14, have: data.len(),
-            message: "An Ethernet frame must be at least 14 B".to_string() })
-    }
-
     let mut values = NamedValues::new();
-    values.push(("Destination", Val::Bytes(&data[0..6])));
-    values.push(("Source", Val::Bytes(&data[6..12])));
 
-    // The type/length field might be either a type or a length.
-    let tlen = unsigned(&data[12..14], Endianness::BigEndian);
-    let remainder = &data[14..];
+    //TODO: beter parsing: 802.1Q tag, minimum payload size, CRC
+    match tuple!(data, take!(6), take!(6), be_u16) {
+        IResult::Done(remainder, (dest, src, tlen)) => {
+            values.push(("Destination", Val::Bytes(dest)));
+            values.push(("Source", Val::Bytes(src)));
 
-    match tlen {
-        Ok(i) if i <= 1500 => {
-            values.push(("Length", Val::Unsigned(i)));
-        },
-
-        Ok(i) => {
-            match i {
-                0x800 => values.push(("IP", Val::Payload(ip::dissect(remainder)))),
-                0x806 => values.push(("ARP", Val::Payload(raw(remainder)))),
-                0x8138 => values.push(("IPX", Val::Payload(raw(remainder)))),
-                0x86dd => values.push(("IPv6", Val::Payload(raw(remainder)))),
-                _ => values.push(("Unknown Type", Val::Payload(Err(DissectError::InvalidData(format!["unknown protocol: {:x}", i]))))),
+            if tlen <= 1500 {
+                values.push(("Length", Val::Unsigned(tlen as u64)));
+            } else {
+                match tlen {
+                    0x800 => values.push(("IP", Val::Payload(ip::dissect(remainder)))),
+                    0x806 => values.push(("ARP", Val::Payload(raw(remainder)))),
+                    0x8138 => values.push(("IPX", Val::Payload(raw(remainder)))),
+                    0x86dd => values.push(("IPv6", Val::Payload(raw(remainder)))),
+                    _ => values.push(("Unknown Type", Val::Payload(Err(DissectError::InvalidData(format!["unknown protocol: {:x}", tlen]))))),
+                };
             };
         },
-        Err(e) => {
-            values.push(("Type/Length", Val::Payload(Err(e))));
-        },
-    };
+        IResult::Incomplete(Needed::Size(needed)) =>
+            return Err(DissectError::Underflow { expected: needed, have: data.len(),
+                message: format!("An Ethernet frame must be at least {} B", needed) }),
+        //TODO: anything I can do here?
+        _ => panic!("failed to parse Ethernet packet!")
+    }
 
     Ok(Box::new(Val::Object(values)))
 }
@@ -68,5 +62,12 @@ mod test {
         assert_eq!(val["Destination"].as_bytes().unwrap(), &[0x84, 0x38, 0x35, 0x45, 0x49, 0x88]);
         assert_eq!(val["Source"].as_bytes().unwrap(), &[0x9c, 0x20, 0x7b, 0xe9, 0x1a, 0x02]);
         assert!(val["IP"].as_payload().unwrap().is_err())
+    }
+
+    #[test]
+    #[should_panic(expected = "Underflow { expected: 12, have: 10, message: \"An Ethernet frame must be at least 12 B\" }")]
+    fn dissect_ethernet_underflow() {
+        let data = [132, 56, 53, 69, 73, 136, 156, 32, 123, 233];
+        let _ = dissect(&data).unwrap();
     }
 }

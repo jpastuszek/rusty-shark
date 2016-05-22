@@ -63,6 +63,8 @@
 extern crate byteorder;
 #[macro_use]
 extern crate itertools;
+#[macro_use]
+extern crate nom;
 
 use byteorder::ReadBytesExt;
 use std::fmt;
