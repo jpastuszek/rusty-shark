@@ -83,7 +83,7 @@ use itertools::Itertools;
 ///  * supporting asynchronous sub-object parsing (some sort of promises?)
 ///
 #[derive(Debug, PartialEq)]
-pub enum Val {
+pub enum Val<'data> {
     /// A signed integer, in machine-native representation.
     Signed(i64),
 
@@ -97,26 +97,26 @@ pub enum Val {
     Symbol(&'static str),
 
     /// A network address, which can have its own special encoding.
-    Address { bytes: Vec<u8>, encoded: String },
+    Address { bytes: &'data [u8], encoded: String },
 
     /// Single byte bit flags.
     BitFlags8(u8, [Option<&'static str>; 8]),
 
     /// A sub-object is an ordered set of name, value pairs.
-    Object(NamedValues),
+    Object(NamedValues<'data>),
 
     /// A payload, which can be dissected and fail
-    Payload(DissectResult<Box<Val>>),
+    Payload(DissectResult<'data, Box<Val<'data>>>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
-    Bytes(Vec<u8>),
+    Bytes(&'data [u8]),
 
     // TODO: labeled or enum variant for enumerations like protocols: 6 (tcp), 17 (udp)
     // try avoid Boxing (allocations) - perhaps pointer to detail dissect function
     // Signed(i64, Option<Dissector>)
 }
 
-impl Val {
+impl<'data> Val<'data> {
     pub fn pretty_print(&self, indent:usize) -> String {
         match self {
             &Val::Object(ref values) => {
@@ -170,7 +170,7 @@ impl Val {
 
     /// If the `Val` is a String, returns the associated String.
     /// Returns None otherwise.
-    pub fn as_string<'a>(&'a self) -> Option<&'a str> {
+    pub fn as_string<'val>(&'val self) -> Option<&'val str> {
         match self {
             &Val::String(ref val) => Some(&val),
             _ => None
@@ -198,16 +198,16 @@ impl Val {
 
     /// If the `Val` is a Address, returns the associated bytes field as Vec<u8>.
     /// Returns None otherwise.
-    pub fn as_address_bytes<'a>(&'a self) -> Option<&'a [u8]> {
+    pub fn as_address_bytes(&self) -> Option<&'data [u8]> {
         match self {
-            &Val::Address{ref bytes, ..} => Some(bytes.as_slice()),
+            &Val::Address{ref bytes, ..} => Some(bytes),
             _ => None
         }
     }
 
     /// If the `Val` is a Address, returns the associated encoded field as String.
     /// Returns None otherwise.
-    pub fn as_address_encoded<'a>(&'a self) -> Option<&'a str> {
+    pub fn as_address_encoded<'val>(&'val self) -> Option<&'val str> {
         match self {
             &Val::Address{ref encoded, ..} => Some(&encoded),
             _ => None
@@ -248,7 +248,7 @@ impl Val {
 
     /// If the `Val` is a Object, returns the associated NamedValues.
     /// Returns None otherwise.
-    pub fn as_object<'a>(&'a self) -> Option<&'a NamedValues> {
+    pub fn as_object(&self) -> Option<&'data NamedValues> {
         match self {
             &Val::Object(ref val) => Some(val),
             _ => None
@@ -262,7 +262,7 @@ impl Val {
 
     /// If the `Val` is a Payload, returns the associated Box<DissectResult<Val>>.
     /// Returns None otherwise.
-    pub fn as_payload<'a>(&'a self) -> Option<&'a DissectResult> {
+    pub fn as_payload(&self) -> Option<&'data DissectResult> {
         match self {
             &Val::Payload(ref val) => Some(val),
             _ => None
@@ -276,14 +276,14 @@ impl Val {
 
     /// If the `Val` is a Bytes, returns the associated Vec<u8>.
     /// Returns None otherwise.
-    pub fn as_bytes<'a>(&'a self) -> Option<&'a [u8]> {
+    pub fn as_bytes(&self) -> Option<&'data [u8]> {
         match self {
-            &Val::Bytes(ref val) => Some(val.as_slice()),
+            &Val::Bytes(ref val) => Some(val),
             _ => None
         }
     }
 
-    pub fn get<'a>(&'a self, index: &str) -> Result<&'a Val, AccessError> {
+    pub fn get<'val>(&'val self, index: &str) -> Result<&'val Val<'data>, AccessError> {
         match self {
             &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index)
                 .ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
@@ -293,7 +293,7 @@ impl Val {
         }
     }
 
-    pub fn get_path<'a>(&'a self, keys: &[&str]) -> Result<&'a Val, AccessError> {
+    pub fn get_path(&self, keys: &[&str]) -> Result<&'data Val, AccessError> {
         keys.iter().fold(Ok(self), |val, index| {
             match val {
                 Ok(val) => val.get(index),
@@ -302,7 +302,7 @@ impl Val {
         })
     }
 
-    pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a Val> {
+    pub fn lookup(&self, path: &str) -> Option<&'data Val> {
         path.split('.').fold(Some(self), |val, index| {
             match val {
                 Some(val) => val.get(index).ok(),
@@ -353,10 +353,10 @@ impl fmt::Display for AccessError {
     }
 }
 
-impl Index<&'static str> for Val {
-    type Output = Val;
+impl<'data> Index<&'static str> for Val<'data> {
+    type Output = Val<'data>;
 
-    fn index<'a>(&'a self, index: &str) -> &'a Val {
+    fn index(&self, index: &str) -> &Val<'data> {
         match self.get(index) {
             Err(err) => panic!(format!["indexing error: {}", err]),
             Ok(val) => val
@@ -364,7 +364,7 @@ impl Index<&'static str> for Val {
     }
 }
 
-impl fmt::Display for Val {
+impl<'data> fmt::Display for Val<'data> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Val::Signed(ref i) => write![f, "{}", i],
@@ -437,13 +437,13 @@ impl fmt::Display for DissectError {
 }
 
 /// The result of a dissection function.
-pub type DissectResult<T = Box<Val>> = Result<T, DissectError>;
+pub type DissectResult<'data, T = Box<Val<'data>>> = Result<T, DissectError>;
 
 /// A named value-or-error.
-pub type NamedValues = Vec<(&'static str, Val)>;
+pub type NamedValues<'data> = Vec<(&'static str, Val<'data>)>;
 
 /// Type of dissection functions.
-pub type Dissector = fn(&[u8]) -> DissectResult<Box<Val>>;
+pub type Dissector<'data> = fn(&'data [u8]) -> DissectResult<Box<Val<'data>>>;
 
 /// Little- or big-endian integer representations.
 pub enum Endianness {
@@ -514,9 +514,9 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> DissectResult<u64> {
 }
 
 /// Dissector of last resort: store raw bytes without interpretation.
-pub fn raw(data: &[u8]) -> DissectResult {
+pub fn raw<'data>(data: &'data [u8]) -> DissectResult<'data> {
     let mut obj = NamedValues::new();
-    obj.push(("raw data", Val::Bytes(data.to_vec())));
+    obj.push(("raw data", Val::Bytes(data)));
     Ok(Box::new(Val::Object(obj)))
 }
 
@@ -527,7 +527,7 @@ pub mod ip;
 mod test {
     use super::*;
 
-    fn test_object() -> Val {
+    fn test_object<'data>(data: &'data[u8]) -> Val {
         let mut obj = NamedValues::new();
         let mut payload = NamedValues::new();
 
@@ -537,7 +537,7 @@ mod test {
         Val::Object(obj)
     }
 
-    fn test_object_err_payload() -> Val {
+    fn test_object_err_payload<'data>(data: &'data[u8]) -> Val {
         let mut obj = NamedValues::new();
         let mut payload = NamedValues::new();
 
@@ -547,7 +547,7 @@ mod test {
         Val::Object(obj)
     }
 
-    fn flags_test_object() -> Val {
+    fn flags_test_object<'data>(data: &'data[u8]) -> Val<'data> {
         let mut obj = NamedValues::new();
 
         obj.push(("flags", Val::BitFlags8(0b01011100, [
@@ -559,25 +559,29 @@ mod test {
 
     #[test]
     fn val_index() {
-        assert_eq!(test_object()["foo"]["bar"], Val::Unsigned(42));
+        let data = [];
+        assert_eq!(test_object(&data)["foo"]["bar"], Val::Unsigned(42));
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
     fn val_index_not_found() {
-        let _ = test_object()["baz"]["bar"];
+        let data = [];
+        let _ = test_object(&data)["baz"]["bar"];
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
     fn val_index_not_found2() {
-        let _ = test_object()["foo"]["baz"];
+        let data = [];
+        let _ = test_object(&data)["foo"]["baz"];
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: Val::Payload under index 'bar' contains error: invalid data: error")]
     fn val_index_dissect_err() {
-        let _ = test_object_err_payload()["foo"]["bar"];
+        let data = [];
+        let _ = test_object_err_payload(&data)["foo"]["bar"];
     }
 
     #[test]
@@ -588,12 +592,14 @@ mod test {
 
     #[test]
     fn val_get() {
-        assert_eq!(test_object().get("foo").unwrap().get("bar").unwrap(), &Val::Unsigned(42));
+        let data = [];
+        assert_eq!(test_object(&data).get("foo").unwrap().get("bar").unwrap(), &Val::Unsigned(42));
     }
 
     #[test]
     fn val_get_not_found() {
-        match test_object().get("baz").unwrap_err() {
+        let data = [];
+        match test_object(&data).get("baz").unwrap_err() {
             AccessError::NotFound(ref desc) => assert_eq!(desc, "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])"),
             _ => panic!("wrong error")
         }
@@ -601,7 +607,8 @@ mod test {
 
     #[test]
     fn val_get_dissect_err() {
-        match test_object_err_payload()["foo"].get("bar").unwrap_err() {
+        let data = [];
+        match test_object_err_payload(&data)["foo"].get("bar").unwrap_err() {
             AccessError::DissectError(ref desc) => assert_eq!(desc, "Val::Payload under index 'bar' contains error: invalid data: error"),
             _ => panic!("wrong error")
         }
@@ -617,22 +624,26 @@ mod test {
 
     #[test]
     fn val_get_path() {
-        assert_eq!(test_object().get_path(&["foo", "bar"]).unwrap(), &Val::Unsigned(42));
+        let data = [];
+        assert_eq!(test_object(&data).get_path(&["foo", "bar"]).unwrap(), &Val::Unsigned(42));
     }
 
     #[test]
     fn val_lookup() {
-        assert_eq!(test_object().lookup("foo.bar"), Some(&Val::Unsigned(42)));
+        let data = [];
+        assert_eq!(test_object(&data).lookup("foo.bar"), Some(&Val::Unsigned(42)));
     }
 
     #[test]
     fn val_lookup_none() {
-        assert_eq!(test_object().lookup("foo.bar.baz"), None);
+        let data = [];
+        assert_eq!(test_object(&data).lookup("foo.bar.baz"), None);
     }
 
     #[test]
     fn flags_access_by_bit_no() {
-        let ref flags = flags_test_object()["flags"];
+        let data = [];
+        let ref flags = flags_test_object(&data)["flags"];
         assert_eq!(flags.as_bitflags8_bit_no(0), Some(false));
         assert_eq!(flags.as_bitflags8_bit_no(1), Some(false));
         assert_eq!(flags.as_bitflags8_bit_no(2), Some(true));
@@ -646,17 +657,18 @@ mod test {
     #[test]
     #[should_panic(expected = "cannot access bit higher than 8'th")]
     fn flags_access_by_bit_no_overflow() {
-        let ref flags = flags_test_object()["flags"];
+        let data = [];
+        let ref flags = flags_test_object(&data)["flags"];
         assert_eq!(flags.as_bitflags8_bit_no(9), Some(false));
     }
 
     #[test]
     fn flags_access_by_bit_name() {
-        let ref flags = flags_test_object()["flags"];
+        let data = [];
+        let ref flags = flags_test_object(&data)["flags"];
         assert_eq!(flags.as_bitflags8_bit_name("foo"), Some(false));
         assert_eq!(flags.as_bitflags8_bit_name("bar"), Some(true));
         assert_eq!(flags.as_bitflags8_bit_name("baz"), Some(true));
         assert_eq!(flags.as_bitflags8_bit_name("quix"), None);
     }
-
 }

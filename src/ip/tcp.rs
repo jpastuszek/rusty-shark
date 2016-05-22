@@ -63,14 +63,14 @@ pub fn dissect(data : &[u8]) -> DissectResult {
 
     //TODO: Val::Checksum ? need parts of IP header?!
     let checksum = &data[16..18];
-    values.push(("Checksum", Val::Bytes(checksum.to_vec())));
+    values.push(("Checksum", Val::Bytes(checksum)));
 
     let urgent_pointer = unsigned(&data[18..20], Endianness::BigEndian);
     values.push(("Urgent Pointer", Val::Unsigned(urgent_pointer.unwrap() as u64)));
 
     if header_lenght > 20 {
         let options = &data[20..header_lenght];
-        values.push(("Options", Val::Bytes(options.to_vec())));
+        values.push(("Options", Val::Bytes(options)));
     }
 
     let remainder = &data[header_lenght..];

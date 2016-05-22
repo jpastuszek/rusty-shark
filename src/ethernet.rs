@@ -25,8 +25,8 @@ pub fn dissect(data : &[u8]) -> DissectResult {
     }
 
     let mut values = NamedValues::new();
-    values.push(("Destination", Val::Bytes(data[0..6].to_vec())));
-    values.push(("Source", Val::Bytes(data[6..12].to_vec())));
+    values.push(("Destination", Val::Bytes(&data[0..6])));
+    values.push(("Source", Val::Bytes(&data[6..12])));
 
     // The type/length field might be either a type or a length.
     let tlen = unsigned(&data[12..14], Endianness::BigEndian);

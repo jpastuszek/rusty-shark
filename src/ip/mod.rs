@@ -65,24 +65,24 @@ pub fn dissect(data : &[u8]) -> DissectResult {
     values.push(("Protocol", Val::Unsigned(protocol as u64)));
 
     // Header checksum
-    values.push(("Checksum", Val::Bytes(data[10..12].to_vec())));
+    values.push(("Checksum", Val::Bytes(&data[10..12])));
 
     // Source and destination addresses
     let source = &data[12..16];
     values.push(("Source", Val::Address {
-        bytes: source.to_vec(),
+        bytes: source,
         encoded: source.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
     }));
 
     let dest = &data[16..20];
     values.push(("Destination", Val::Address {
-        bytes: dest.to_vec(),
+        bytes: dest,
         encoded: dest.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
     }));
 
     if header_lenght > 20 {
         let options = &data[20..header_lenght];
-        values.push(("Options", Val::Bytes(options.to_vec())));
+        values.push(("Options", Val::Bytes(options)));
     }
 
     // Parse the remainder according to the specified protocol.
