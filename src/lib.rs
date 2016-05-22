@@ -527,7 +527,7 @@ pub mod ip;
 mod test {
     use super::*;
 
-    fn test_object<'data>(data: &'data[u8]) -> Val {
+    fn test_object() -> Val<'static> {
         let mut obj = NamedValues::new();
         let mut payload = NamedValues::new();
 
@@ -537,7 +537,7 @@ mod test {
         Val::Object(obj)
     }
 
-    fn test_object_err_payload<'data>(data: &'data[u8]) -> Val {
+    fn test_object_err_payload() -> Val<'static> {
         let mut obj = NamedValues::new();
         let mut payload = NamedValues::new();
 
@@ -547,7 +547,7 @@ mod test {
         Val::Object(obj)
     }
 
-    fn flags_test_object<'data>(data: &'data[u8]) -> Val<'data> {
+    fn flags_test_object() -> Val<'static> {
         let mut obj = NamedValues::new();
 
         obj.push(("flags", Val::BitFlags8(0b01011100, [
@@ -559,29 +559,25 @@ mod test {
 
     #[test]
     fn val_index() {
-        let data = [];
-        assert_eq!(test_object(&data)["foo"]["bar"], Val::Unsigned(42));
+        assert_eq!(test_object()["foo"]["bar"], Val::Unsigned(42));
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
     fn val_index_not_found() {
-        let data = [];
-        let _ = test_object(&data)["baz"]["bar"];
+        let _ = test_object()["baz"]["bar"];
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
     fn val_index_not_found2() {
-        let data = [];
-        let _ = test_object(&data)["foo"]["baz"];
+        let _ = test_object()["foo"]["baz"];
     }
 
     #[test]
     #[should_panic(expected = "indexing error: access error: Val::Payload under index 'bar' contains error: invalid data: error")]
     fn val_index_dissect_err() {
-        let data = [];
-        let _ = test_object_err_payload(&data)["foo"]["bar"];
+        let _ = test_object_err_payload()["foo"]["bar"];
     }
 
     #[test]
@@ -592,14 +588,12 @@ mod test {
 
     #[test]
     fn val_get() {
-        let data = [];
-        assert_eq!(test_object(&data).get("foo").unwrap().get("bar").unwrap(), &Val::Unsigned(42));
+        assert_eq!(test_object().get("foo").unwrap().get("bar").unwrap(), &Val::Unsigned(42));
     }
 
     #[test]
     fn val_get_not_found() {
-        let data = [];
-        match test_object(&data).get("baz").unwrap_err() {
+        match test_object().get("baz").unwrap_err() {
             AccessError::NotFound(ref desc) => assert_eq!(desc, "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])"),
             _ => panic!("wrong error")
         }
@@ -607,8 +601,7 @@ mod test {
 
     #[test]
     fn val_get_dissect_err() {
-        let data = [];
-        match test_object_err_payload(&data)["foo"].get("bar").unwrap_err() {
+        match test_object_err_payload()["foo"].get("bar").unwrap_err() {
             AccessError::DissectError(ref desc) => assert_eq!(desc, "Val::Payload under index 'bar' contains error: invalid data: error"),
             _ => panic!("wrong error")
         }
@@ -624,26 +617,22 @@ mod test {
 
     #[test]
     fn val_get_path() {
-        let data = [];
-        assert_eq!(test_object(&data).get_path(&["foo", "bar"]).unwrap(), &Val::Unsigned(42));
+        assert_eq!(test_object().get_path(&["foo", "bar"]).unwrap(), &Val::Unsigned(42));
     }
 
     #[test]
     fn val_lookup() {
-        let data = [];
-        assert_eq!(test_object(&data).lookup("foo.bar"), Some(&Val::Unsigned(42)));
+        assert_eq!(test_object().lookup("foo.bar"), Some(&Val::Unsigned(42)));
     }
 
     #[test]
     fn val_lookup_none() {
-        let data = [];
-        assert_eq!(test_object(&data).lookup("foo.bar.baz"), None);
+        assert_eq!(test_object().lookup("foo.bar.baz"), None);
     }
 
     #[test]
     fn flags_access_by_bit_no() {
-        let data = [];
-        let ref flags = flags_test_object(&data)["flags"];
+        let ref flags = flags_test_object()["flags"];
         assert_eq!(flags.as_bitflags8_bit_no(0), Some(false));
         assert_eq!(flags.as_bitflags8_bit_no(1), Some(false));
         assert_eq!(flags.as_bitflags8_bit_no(2), Some(true));
@@ -657,15 +646,13 @@ mod test {
     #[test]
     #[should_panic(expected = "cannot access bit higher than 8'th")]
     fn flags_access_by_bit_no_overflow() {
-        let data = [];
-        let ref flags = flags_test_object(&data)["flags"];
+        let ref flags = flags_test_object()["flags"];
         assert_eq!(flags.as_bitflags8_bit_no(9), Some(false));
     }
 
     #[test]
     fn flags_access_by_bit_name() {
-        let data = [];
-        let ref flags = flags_test_object(&data)["flags"];
+        let ref flags = flags_test_object()["flags"];
         assert_eq!(flags.as_bitflags8_bit_name("foo"), Some(false));
         assert_eq!(flags.as_bitflags8_bit_name("bar"), Some(true));
         assert_eq!(flags.as_bitflags8_bit_name("baz"), Some(true));
