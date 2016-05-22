@@ -73,6 +73,7 @@ use std::ops::Index;
 use std::error::Error;
 
 use itertools::Itertools;
+use nom::{IResult, Needed};
 
 /// A value parsed from a packet.
 ///
@@ -108,7 +109,7 @@ pub enum Val<'data> {
     Object(NamedValues<'data>),
 
     /// A payload, which can be dissected and fail
-    Payload(DissectResult<'data, Box<Val<'data>>>),
+    Payload(DissectResult<'data>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(&'data [u8]),
@@ -422,30 +423,53 @@ impl<'data> fmt::Display for Val<'data> {
 /// An error related to packet dissection (underflow, bad value, etc.).
 #[derive(Debug, PartialEq)]
 pub enum DissectError {
-    Underflow { expected: usize, have: usize, message: String, },
+    Underflow { expected: Option<usize>, have: usize, message: String, },
     InvalidData(String),
 }
 
 impl fmt::Display for DissectError {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &DissectError::Underflow { expected, have, ref message } =>
-                write![f, "underflow (expected {}, have {}): {}",
+            &DissectError::Underflow { expected, have, ref message } => match expected {
+                Some(expected) => write![f, "underflow (expected {}, have {}): {}",
                     expected, have, message],
-
+                None => write![f, "underflow (need some more, have {}): {}",
+                    have, message],
+            },
             &DissectError::InvalidData(ref msg) => write![f, "invalid data: {}", msg],
         }
     }
 }
 
 /// The result of a dissection function.
-pub type DissectResult<'data, T = Box<Val<'data>>> = Result<T, DissectError>;
+pub type DissectResult<'data> = Result<Box<Val<'data>>, DissectError>;
+
+trait IntoDissectResult<'data> {
+    fn into_dissect_result(self, what: &'static str, data: &'data [u8]) -> DissectResult<'data>;
+}
+
+impl<'data> IntoDissectResult<'data> for IResult<&'data [u8], NamedValues<'data>> {
+    fn into_dissect_result(self, what: &'static str, data: &'data [u8]) -> DissectResult<'data> {
+        match self {
+            IResult::Done(_, values) => Ok(Box::new(Val::Object(values))),
+            IResult::Incomplete(Needed::Size(needed)) => Err(DissectError::Underflow {
+                expected: Some(needed),
+                have: data.len(),
+                message: format!("Need {} B of data to dissect {}, have {} B", needed, what, data.len()) }),
+            IResult::Incomplete(Needed::Unknown) => Err(DissectError::Underflow {
+                expected: None,
+                have: data.len(),
+                message: format!("Needed more data to dissect {}, have {} B", what, data.len())}),
+            IResult::Error(err) => Err(DissectError::InvalidData(format!("Failed to dissect {}: {:?}", what, err)))
+        }
+    }
+}
 
 /// A named value-or-error.
 pub type NamedValues<'data> = Vec<(&'static str, Val<'data>)>;
 
 /// Type of dissection functions.
-pub type Dissector<'data> = fn(&'data [u8]) -> DissectResult<Box<Val<'data>>>;
+pub type Dissector<'data> = fn(&'data [u8]) -> DissectResult<'data>;
 
 /// Little- or big-endian integer representations.
 pub enum Endianness {
@@ -458,7 +482,7 @@ pub enum Endianness {
 /// The size of the buffer will be used to determine the size of the integer
 /// that should be parsed (i8, i16, i32 or i64), but the DissectResult will be stored
 /// in an i64.
-pub fn signed(buffer: &[u8], endianness: Endianness) -> DissectResult<i64> {
+pub fn signed(buffer: &[u8], endianness: Endianness) -> Result<i64, DissectError> {
     let mut reader = io::Cursor::new(buffer);
 
     match endianness {
@@ -489,7 +513,7 @@ pub fn signed(buffer: &[u8], endianness: Endianness) -> DissectResult<i64> {
 /// The size of the buffer will be used to determine the size of the integer
 /// that should be parsed (u8, u16, u32 or u64), but the DissectResult will be stored
 /// in a u64.
-pub fn unsigned(buffer: &[u8], endianness: Endianness) -> DissectResult<u64> {
+pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64, DissectError> {
     let mut reader = io::Cursor::new(buffer);
 
     match endianness {

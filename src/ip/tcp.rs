@@ -25,7 +25,7 @@ use unsigned;
 
 pub fn dissect(data : &[u8]) -> DissectResult {
     if data.len() < 20 {
-        return Err(DissectError::Underflow { expected: 20, have: data.len(),
+        return Err(DissectError::Underflow { expected: Some(20), have: data.len(),
             message: "An TCP packet must be at least 20 B".to_string() })
     }
 
@@ -49,7 +49,7 @@ pub fn dissect(data : &[u8]) -> DissectResult {
 
     let header_lenght = offset as usize * 4;
     if header_lenght > data.len() {
-        return Err(DissectError::Underflow { expected: header_lenght, have: data.len(),
+        return Err(DissectError::Underflow { expected: Some(header_lenght), have: data.len(),
             message: "TCP packet offset (header length) greater than available data".to_string() });
     }
 
