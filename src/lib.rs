@@ -106,13 +106,16 @@ pub enum Val<'data> {
     BitFlags8(u8, [Option<&'static str>; 8]),
 
     /// A sub-object is an ordered set of name, value pairs.
-    Object(NamedValues<'data>),
+    Object(&'static str, NamedValues<'data>),
 
     /// A payload, which can be dissected and fail
     Payload(DissectResult<'data>),
 
     /// Raw bytes, e.g., a checksum or just unparsed data.
     Bytes(&'data [u8]),
+
+    /// Raw bytes of payload that has no dissector implemented
+    Undissected(&'static str, &'data [u8]),
 
     // TODO: labeled or enum variant for enumerations like protocols: 6 (tcp), 17 (udp)
     // try avoid Boxing (allocations) - perhaps pointer to detail dissect function
@@ -122,11 +125,12 @@ pub enum Val<'data> {
 impl<'data> Val<'data> {
     pub fn pretty_print(&self, indent:usize) -> String {
         match self {
-            &Val::Object(ref values) => {
+            &Val::Object(ref name, ref values) => {
                 let mut s = "\n".to_string();
                 let prefix =
                     ::std::iter::repeat(" ").take(2 * indent).collect::<String>();
 
+                s = s + &format!["{}[{}]\n", prefix, name];
                 for &(ref k, ref v) in values {
                     s = s + &format!["{}{}: {}\n", prefix, k, v.pretty_print(indent + 1)]
                 }
@@ -251,9 +255,9 @@ impl<'data> Val<'data> {
 
     /// If the `Val` is a Object, returns the associated NamedValues.
     /// Returns None otherwise.
-    pub fn as_object(&self) -> Option<&'data NamedValues> {
+    pub fn as_object(&self) -> Option<(&'static str, &'data NamedValues)> {
         match self {
-            &Val::Object(ref val) => Some(val),
+            &Val::Object(name, ref val) => Some((name, val)),
             _ => None
         }
     }
@@ -268,6 +272,20 @@ impl<'data> Val<'data> {
     pub fn as_payload(&self) -> Option<&'data DissectResult> {
         match self {
             &Val::Payload(ref val) => Some(val),
+            _ => None
+        }
+    }
+
+    /// Returns true if the `Val` is a Undissected. Returns false otherwise.
+    pub fn is_undissected(&self) -> bool {
+        self.as_undissected().is_some()
+    }
+
+    /// If the `Val` is a Undissected, returns the associated (name, data) pair
+    /// Returns None otherwise.
+    pub fn as_undissected(&self) -> Option<(&'static str, &'data [u8])> {
+        match self {
+            &Val::Undissected(ref name, ref data) => Some((name, data)),
             _ => None
         }
     }
@@ -288,7 +306,7 @@ impl<'data> Val<'data> {
 
     pub fn get<'val>(&'val self, index: &str) -> Result<&'val Val<'data>, AccessError> {
         match self {
-            &Val::Object(ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index)
+            &Val::Object(_, ref values) => values.iter().find(|&&(ref k, ref _v)| k == &index)
                 .ok_or(AccessError::not_found(index, self)).map(|v| &v.1),
             &Val::Payload(Ok(ref val)) => val.get(index),
             &Val::Payload(Err(ref e)) => Err(AccessError::dissect_error(index, e)),
@@ -391,14 +409,32 @@ impl<'data> fmt::Display for Val<'data> {
                     val
                 }).format("+", |val, f| f(&format_args!("{}", val)))]
             },
-            &Val::Object(ref values) => {
-                write![f, "{{ {} }}", values.iter()
+            &Val::Object(ref name, ref values) => {
+                write![f, "{} -> {{ {} }}", name, values.iter()
                     .format(", ", |kv, f| f(&format_args!("{}: {}", kv.0, kv.1)))]
             },
             &Val::Payload(Ok(ref val)) => write![f, "({})", val],
             &Val::Payload(Err(ref e)) => write![f, "<<{}>>", e],
             &Val::Bytes(ref bytes) => {
                 try![write![f, "{} B [", bytes.len()]];
+
+                let to_print:&[u8] =
+                    if bytes.len() < 16 { bytes }
+                    else { &bytes[..16] }
+                    ;
+
+                for b in to_print {
+                    try![write![f, " {:02x}", b]];
+                }
+
+                if bytes.len() > 16 {
+                    try![write![f, " ..."]];
+                }
+
+                write![f, " ]"]
+            },
+            &Val::Undissected(ref name, ref bytes) => {
+                try![write![f, "{}: {} B [", name, bytes.len()]];
 
                 let to_print:&[u8] =
                     if bytes.len() < 16 { bytes }
@@ -445,22 +481,22 @@ impl fmt::Display for DissectError {
 pub type DissectResult<'data> = Result<Box<Val<'data>>, DissectError>;
 
 trait IntoDissectResult<'data> {
-    fn into_dissect_result(self, what: &'static str, data: &'data [u8]) -> DissectResult<'data>;
+    fn into_dissect_result(self, name: &'static str, data: &'data [u8]) -> DissectResult<'data>;
 }
 
 impl<'data> IntoDissectResult<'data> for IResult<&'data [u8], NamedValues<'data>> {
-    fn into_dissect_result(self, what: &'static str, data: &'data [u8]) -> DissectResult<'data> {
+    fn into_dissect_result(self, name: &'static str, data: &'data [u8]) -> DissectResult<'data> {
         match self {
-            IResult::Done(_, values) => Ok(Box::new(Val::Object(values))),
+            IResult::Done(_, values) => Ok(Box::new(Val::Object(name, values))),
             IResult::Incomplete(Needed::Size(needed)) => Err(DissectError::Underflow {
                 expected: Some(needed),
                 have: data.len(),
-                message: format!("Need {} B of data to dissect {}, have {} B", needed, what, data.len()) }),
+                message: format!("Need {} B of data to dissect {}, have {} B", needed, name, data.len()) }),
             IResult::Incomplete(Needed::Unknown) => Err(DissectError::Underflow {
                 expected: None,
                 have: data.len(),
-                message: format!("Needed more data to dissect {}, have {} B", what, data.len())}),
-            IResult::Error(err) => Err(DissectError::InvalidData(format!("Failed to dissect {}: {:?}", what, err)))
+                message: format!("Needed more data to dissect {}, have {} B", name, data.len())}),
+            IResult::Error(err) => Err(DissectError::InvalidData(format!("Failed to dissect {}: {:?}", name, err)))
         }
     }
 }
@@ -540,10 +576,10 @@ pub fn unsigned(buffer: &[u8], endianness: Endianness) -> Result<u64, DissectErr
 }
 
 /// Dissector of last resort: store raw bytes without interpretation.
-pub fn raw<'data>(data: &'data [u8]) -> DissectResult<'data> {
+pub fn raw<'data>(name: &'static str, data: &'data [u8]) -> DissectResult<'data> {
     let mut obj = NamedValues::new();
     obj.push(("raw data", Val::Bytes(data)));
-    Ok(Box::new(Val::Object(obj)))
+    Ok(Box::new(Val::Object(name, obj)))
 }
 
 pub mod ethernet;
@@ -558,9 +594,9 @@ mod test {
         let mut payload = NamedValues::new();
 
         payload.push(("bar", Val::Unsigned(42)));
-        obj.push(("foo", Val::Payload(Ok(Box::new(Val::Object(payload))))));
+        obj.push(("foo", Val::Payload(Ok(Box::new(Val::Object("test", payload))))));
 
-        Val::Object(obj)
+        Val::Object("test", obj)
     }
 
     fn test_object_err_payload() -> Val<'static> {
@@ -570,7 +606,7 @@ mod test {
         payload.push(("bar", Val::Unsigned(42)));
         obj.push(("foo", Val::Payload(Err(DissectError::InvalidData("error".to_string())))));
 
-        Val::Object(obj)
+        Val::Object("test", obj)
     }
 
     fn flags_test_object() -> Val<'static> {
@@ -580,7 +616,7 @@ mod test {
                                           Some("foo"), None, Some("bar"), None,
                                           None, None, Some("baz"), None])));
 
-        Val::Object(obj)
+        Val::Object("test", obj)
     }
 
     #[test]
@@ -589,13 +625,13 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])")]
+    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object(\"test\", [(\"foo\", Payload(Ok(Object(\"test\", [(\"bar\", Unsigned(42))]))))])")]
     fn val_index_not_found() {
         let _ = test_object()["baz"]["bar"];
     }
 
     #[test]
-    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object([(\"bar\", Unsigned(42))])")]
+    #[should_panic(expected = "indexing error: access error: no value for index 'baz' found in: Object(\"test\", [(\"bar\", Unsigned(42))])")]
     fn val_index_not_found2() {
         let _ = test_object()["foo"]["baz"];
     }
@@ -620,7 +656,7 @@ mod test {
     #[test]
     fn val_get_not_found() {
         match test_object().get("baz").unwrap_err() {
-            AccessError::NotFound(ref desc) => assert_eq!(desc, "no value for index 'baz' found in: Object([(\"foo\", Payload(Ok(Object([(\"bar\", Unsigned(42))]))))])"),
+            AccessError::NotFound(ref desc) => assert!(desc.starts_with("no value for index 'baz' found in")),
             _ => panic!("wrong error")
         }
     }

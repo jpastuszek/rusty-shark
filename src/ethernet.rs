@@ -15,7 +15,6 @@ use IntoDissectResult;
 use Val;
 use NamedValues;
 use ip;
-use raw;
 use nom::{be_u16, rest};
 
 pub fn dissect(data : &[u8]) -> DissectResult {
@@ -36,16 +35,16 @@ pub fn dissect(data : &[u8]) -> DissectResult {
                    values.push(("Length", Val::Unsigned(tlen as u64)));
                } else {
                    match tlen {
-                       0x800 => values.push(("IP", Val::Payload(ip::dissect(remainder)))),
-                       0x806 => values.push(("ARP", Val::Payload(raw(remainder)))),
-                       0x8138 => values.push(("IPX", Val::Payload(raw(remainder)))),
-                       0x86dd => values.push(("IPv6", Val::Payload(raw(remainder)))),
-                       _ => values.push(("Unknown Type", Val::Payload(Err(DissectError::InvalidData(format!["unknown protocol: {:x}", tlen]))))),
+                       0x800 => values.push(("Payload", Val::Payload(ip::dissect(remainder)))),
+                       0x806 => values.push(("Payload", Val::Undissected("ARP", remainder))),
+                       0x8138 => values.push(("Payload", Val::Undissected("IPX", remainder))),
+                       0x86dd => values.push(("Payload", Val::Undissected("IPv6", remainder))),
+                       _ => values.push(("Payload", Val::Payload(Err(DissectError::InvalidData(format!["unknown protocol: {:x}", tlen]))))),
                    };
                };
 
                values
-           }).into_dissect_result("Ethernet packet", data)
+           }).into_dissect_result("Ethernet frame", data)
 }
 
 #[cfg(test)]
@@ -61,11 +60,11 @@ mod test {
 
         assert_eq!(val["Destination"].as_bytes().unwrap(), &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
         assert_eq!(val["Source"].as_bytes().unwrap(), &[0xa0, 0x0b, 0xba, 0x84, 0x2d, 0x0e]);
-        assert!(val["ARP"].is_payload());
+        assert!(val["Payload"].is_undissected());
     }
 
     #[test]
-    #[should_panic(expected = "Underflow { expected: Some(12), have: 10, message: \"Need 12 B of data to dissect Ethernet packet, have 10 B\" }")]
+    #[should_panic(expected = "Underflow { expected: Some(12), have: 10, message: \"Need 12 B of data to dissect Ethernet frame, have 10 B\" }")]
     fn dissect_ethernet_underflow() {
         let data = [132, 56, 53, 69, 73, 136, 156, 32, 123, 233];
         let _ = dissect(&data).unwrap();

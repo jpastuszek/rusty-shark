@@ -74,9 +74,9 @@ pub fn dissect(data : &[u8]) -> DissectResult {
     }
 
     let remainder = &data[header_lenght..];
-    values.push(("Payload", Val::Payload(raw(remainder))));
+    values.push(("Payload", Val::Payload(raw("Data", remainder))));
 
-    Ok(Box::new(Val::Object(values)))
+    Ok(Box::new(Val::Object("TCP", values)))
 }
 
 #[cfg(test)]

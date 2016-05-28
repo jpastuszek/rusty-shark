@@ -20,7 +20,6 @@ use DissectError;
 use DissectResult;
 use Val;
 use NamedValues;
-use raw;
 use unsigned;
 
 pub fn dissect(data : &[u8]) -> DissectResult {
@@ -88,12 +87,12 @@ pub fn dissect(data : &[u8]) -> DissectResult {
     // Parse the remainder according to the specified protocol.
     let remainder = &data[header_lenght..];
     match protocol {
-        6 => values.push(("TCP", Val::Payload(tcp::dissect(remainder)))),
+        6 => values.push(("Payload", Val::Payload(tcp::dissect(remainder)))),
         // TODO: UDP, TCP, etc.
-        _ => values.push(("Unknown", Val::Payload(raw(remainder))))
+        _ => values.push(("Payload", Val::Undissected("Unknown", remainder)))
     };
 
-    Ok(Box::new(Val::Object(values)))
+    Ok(Box::new(Val::Object("IPv4", values)))
 }
 
 mod tcp;
@@ -120,6 +119,6 @@ mod test {
         assert_eq!(val["Checksum"].as_bytes().unwrap(), &[0xa1u8, 0x24]);
         assert_eq!(val["Source"].as_address_encoded().unwrap(), "46.137.186.243");
         assert_eq!(val["Destination"].as_address_encoded().unwrap(), "192.168.1.115");
-        assert!(val["TCP"].is_payload());
+        assert!(val["Payload"].is_payload());
     }
 }
